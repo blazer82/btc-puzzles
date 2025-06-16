@@ -58,3 +58,42 @@ kernel void test_fe_inv(
         fe_inv(r[0], a[0]);
     }
 }
+
+/*
+ * Kernel to test gej_double (Jacobian point doubling).
+ */
+kernel void test_gej_double(
+    device const gej* a [[buffer(0)]],
+    device gej* r       [[buffer(1)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid == 0) {
+        gej_double(r[0], a[0]);
+    }
+}
+
+/*
+ * Kernel to test gej_add_ge (add affine point to Jacobian point).
+ */
+kernel void test_gej_add_ge(
+    device const gej* a [[buffer(0)]],
+    device const ge* b  [[buffer(1)]],
+    device gej* r       [[buffer(2)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid == 0) {
+        gej_add_ge(r[0], a[0], b[0]);
+    }
+}
+
+/*
+ * Kernel to test gej_set_infinity.
+ */
+kernel void test_gej_set_infinity(
+    device gej* r [[buffer(0)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid == 0) {
+        gej_set_infinity(r[0]);
+    }
+}

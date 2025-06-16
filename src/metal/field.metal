@@ -52,27 +52,27 @@ static inline ulong u128_to_u64(const thread uint128_t &a) {
 // --- Field Element Arithmetic ---
 
 /*
- * Limb-wise addition for 256-bit integers (r = a + b).
+ * Limb-wise addition for 256-bit integers (r += a).
  * This is a basic big-integer operation; it does not perform modular reduction.
  */
-static inline void fe_add(thread fe &r, const thread fe &a, const thread fe &b) {
-    r.n[0] = a.n[0] + b.n[0];
-    r.n[1] = a.n[1] + b.n[1];
-    r.n[2] = a.n[2] + b.n[2];
-    r.n[3] = a.n[3] + b.n[3];
-    r.n[4] = a.n[4] + b.n[4];
+static inline void fe_add(thread fe &r, const thread fe &a) {
+    r.n[0] += a.n[0];
+    r.n[1] += a.n[1];
+    r.n[2] += a.n[2];
+    r.n[3] += a.n[3];
+    r.n[4] += a.n[4];
 }
 
 /*
- * Limb-wise subtraction for 256-bit integers (r = a - b).
+ * Limb-wise subtraction for 256-bit integers (r -= a).
  * This is a basic big-integer operation; it does not perform modular reduction.
  */
-static inline void fe_sub(thread fe &r, const thread fe &a, const thread fe &b) {
-    r.n[0] = a.n[0] - b.n[0];
-    r.n[1] = a.n[1] - b.n[1];
-    r.n[2] = a.n[2] - b.n[2];
-    r.n[3] = a.n[3] - b.n[3];
-    r.n[4] = a.n[4] - b.n[4];
+static inline void fe_sub(thread fe &r, const thread fe &a) {
+    r.n[0] -= a.n[0];
+    r.n[1] -= a.n[1];
+    r.n[2] -= a.n[2];
+    r.n[3] -= a.n[3];
+    r.n[4] -= a.n[4];
 }
 
 /*
@@ -163,6 +163,214 @@ static inline void fe_mul(thread fe &r, const thread fe &a_in, const thread fe &
     u128_rshift(c, 52);
 
     r.n[4] = u128_to_u64(c) + t4;
+}
+
+//
+// --- Stage 3: Elliptic Curve (Group) Operations ---
+//
+// This section implements the group operations for secp256k1, such as
+// point addition and doubling. It uses the field arithmetic from Stage 2.
+//
+// Original source:
+// - _libsecp256k1/src/group_impl.h
+//
+
+/* A group element in affine coordinates. */
+struct ge {
+    fe x;
+    fe y;
+    bool infinity;
+};
+
+/* A group element in Jacobian coordinates. */
+struct gej {
+    fe x;
+    fe y;
+    fe z;
+    bool infinity;
+};
+
+// --- Field Element Constants ---
+constant fe fe_one = {{1, 0, 0, 0, 0}};
+
+// --- Additional Field Element Helpers ---
+
+/* Set a field element to a small integer. */
+static inline void fe_set_int(thread fe &r, int a) {
+    r.n[0] = a;
+    r.n[1] = 0;
+    r.n[2] = 0;
+    r.n[3] = 0;
+    r.n[4] = 0;
+}
+
+/* Negate a field element. Note: this is a simplified, non-optimized version. */
+static inline void fe_negate(thread fe &r, const thread fe &a) {
+    fe zero = {{0,0,0,0,0}};
+    r = zero;
+    fe_sub(r, a);
+    fe_normalize(r);
+}
+
+/* Multiply a field element by a small integer. */
+static inline void fe_mul_int(thread fe &r, int a) {
+    r.n[0] *= a;
+    r.n[1] *= a;
+    r.n[2] *= a;
+    r.n[3] *= a;
+    r.n[4] *= a;
+}
+
+/* Halve a field element. Ported from `secp256k1_fe_impl_half`. */
+static inline void fe_half(thread fe &r) {
+    ulong t0 = r.n[0], t1 = r.n[1], t2 = r.n[2], t3 = r.n[3], t4 = r.n[4];
+    constant ulong one = 1;
+    ulong mask = -(t0 & one) >> 12;
+
+    t0 += 0xFFFFEFFFFFC2FUL & mask;
+    t1 += mask;
+    t2 += mask;
+    t3 += mask;
+    t4 += mask >> 4;
+
+    r.n[0] = (t0 >> 1) + ((t1 & one) << 51);
+    r.n[1] = (t1 >> 1) + ((t2 & one) << 51);
+    r.n[2] = (t2 >> 1) + ((t3 & one) << 51);
+    r.n[3] = (t3 >> 1) + ((t4 & one) << 51);
+    r.n[4] = (t4 >> 1);
+}
+
+/* Conditionally move a field element. */
+static inline void fe_cmov(thread fe &r, const thread fe &a, bool flag) {
+    r.n[0] = select(r.n[0], a.n[0], flag);
+    r.n[1] = select(r.n[1], a.n[1], flag);
+    r.n[2] = select(r.n[2], a.n[2], flag);
+    r.n[3] = select(r.n[3], a.n[3], flag);
+    r.n[4] = select(r.n[4], a.n[4], flag);
+}
+
+/* Check if a field element normalizes to zero. */
+static inline bool fe_normalizes_to_zero(thread fe &r) {
+    ulong t0 = r.n[0], t1 = r.n[1], t2 = r.n[2], t3 = r.n[3], t4 = r.n[4];
+    ulong z0, z1;
+    constant ulong M52 = 0xFFFFFFFFFFFFFUL;
+
+    ulong x = t4 >> 48;
+    t4 &= 0x0FFFFFFFFFFFFUL;
+
+    t0 += x * 0x1000003D1UL;
+    t1 += (t0 >> 52); t0 &= M52; z0  = t0; z1  = t0 ^ 0x1000003D0UL;
+    t2 += (t1 >> 52); t1 &= M52; z0 |= t1; z1 &= t1;
+    t3 += (t2 >> 52); t2 &= M52; z0 |= t2; z1 &= t2;
+    t4 += (t3 >> 52); t3 &= M52; z0 |= t3; z1 &= t3;
+                                z0 |= t4; z1 &= t4 ^ 0xF000000000000UL;
+
+    return (z0 == 0) | (z1 == M52);
+}
+
+// --- Group Operation Functions ---
+
+/* Set a Jacobian group element to the point at infinity. */
+static inline void gej_set_infinity(thread gej &r) {
+    r.infinity = true;
+    fe_set_int(r.x, 0);
+    fe_set_int(r.y, 0);
+    fe_set_int(r.z, 0);
+}
+
+/* Double a Jacobian group element. Ported from `secp256k1_gej_double`. */
+static inline void gej_double(thread gej &r, const thread gej &a) {
+    r.infinity = a.infinity;
+    if (r.infinity) {
+        return;
+    }
+
+    fe l, s, t;
+
+    fe_mul(r.z, a.z, a.y);
+    fe_sqr(s, a.y);
+    fe_sqr(l, a.x);
+    fe_mul_int(l, 3);
+    fe_half(l);
+    fe_negate(t, s);
+    fe_mul(t, t, a.x);
+    fe_sqr(r.x, l);
+    fe_add(r.x, t);
+    fe_add(r.x, t);
+    fe_sqr(s, s);
+    fe t_prime = r.x;
+    fe_add(t_prime, t);
+    fe_mul(r.y, t_prime, l);
+    fe_add(r.y, s);
+    fe temp_y = r.y;
+    fe_negate(r.y, temp_y);
+}
+
+/* Add a Jacobian group element to an affine one. Ported from `secp256k1_gej_add_ge`. */
+static inline void gej_add_ge(thread gej &r, const thread gej &a, const thread ge &b) {
+    if (a.infinity) {
+        r.infinity = b.infinity;
+        if (!b.infinity) {
+            r.x = b.x;
+            r.y = b.y;
+            r.z = fe_one;
+        }
+        return;
+    }
+    if (b.infinity) {
+        r = a;
+        return;
+    }
+
+    fe zz, u1, u2, s1, s2, t, tt, m, n, q, rr;
+    fe m_alt, rr_alt;
+    bool degenerate;
+
+    fe_sqr(zz, a.z);
+    u1 = a.x;
+    fe_mul(u2, b.x, zz);
+    s1 = a.y;
+    fe_mul(s2, b.y, zz);
+    fe_mul(s2, s2, a.z);
+    t = u1; fe_add(t, u2);
+    m = s1; fe_add(m, s2);
+    fe_sqr(rr, t);
+    fe_negate(m_alt, u2);
+    fe_mul(tt, u1, m_alt);
+    fe_add(rr, tt);
+
+    degenerate = fe_normalizes_to_zero(m);
+
+    rr_alt = s1;
+    fe_mul_int(rr_alt, 2);
+    m_alt = u1;
+    fe_sub(m_alt, u2);
+
+    fe_cmov(rr_alt, rr, !degenerate);
+    fe_cmov(m_alt, m, !degenerate);
+
+    fe_sqr(n, m_alt);
+    q = t; fe_negate(q, q);
+    fe_mul(q, q, n);
+
+    fe_sqr(n, n);
+    fe_cmov(n, m, degenerate);
+    fe_sqr(t, rr_alt);
+    fe_mul(r.z, a.z, m_alt);
+    fe_add(t, q);
+    r.x = t;
+    fe_mul_int(t, 2);
+    fe_add(t, q);
+    fe_mul(t, t, rr_alt);
+    fe_add(t, n);
+    fe_negate(r.y, t);
+    fe_half(r.y);
+
+    fe_cmov(r.x, b.x, a.infinity);
+    fe_cmov(r.y, b.y, a.infinity);
+    fe_cmov(r.z, fe_one, a.infinity);
+
+    r.infinity = fe_normalizes_to_zero(r.z);
 }
 
 //
