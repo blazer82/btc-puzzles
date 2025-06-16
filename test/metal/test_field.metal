@@ -15,7 +15,11 @@ kernel void test_fe_mul(
 {
     // Only run for the first thread.
     if (gid == 0) {
-        fe_mul(r[0], a[0], b[0]);
+        fe a_thread = a[0];
+        fe b_thread = b[0];
+        fe r_thread;
+        fe_mul(r_thread, a_thread, b_thread);
+        r[0] = r_thread;
     }
 }
 
@@ -28,8 +32,9 @@ kernel void test_fe_normalize(
     uint gid [[thread_position_in_grid]])
 {
     if (gid == 0) {
-        r[0] = a[0];
-        fe_normalize(r[0]);
+        fe r_thread = a[0];
+        fe_normalize(r_thread);
+        r[0] = r_thread;
     }
 }
 
@@ -42,7 +47,10 @@ kernel void test_fe_sqr(
     uint gid [[thread_position_in_grid]])
 {
     if (gid == 0) {
-        fe_sqr(r[0], a[0]);
+        fe a_thread = a[0];
+        fe r_thread;
+        fe_sqr(r_thread, a_thread);
+        r[0] = r_thread;
     }
 }
 
@@ -55,7 +63,10 @@ kernel void test_fe_inv(
     uint gid [[thread_position_in_grid]])
 {
     if (gid == 0) {
-        fe_inv(r[0], a[0]);
+        fe a_thread = a[0];
+        fe r_thread;
+        fe_inv(r_thread, a_thread);
+        r[0] = r_thread;
     }
 }
 
@@ -68,7 +79,10 @@ kernel void test_gej_double(
     uint gid [[thread_position_in_grid]])
 {
     if (gid == 0) {
-        gej_double(r[0], a[0]);
+        gej a_thread = a[0];
+        gej r_thread;
+        gej_double(r_thread, a_thread);
+        r[0] = r_thread;
     }
 }
 
@@ -82,7 +96,11 @@ kernel void test_gej_add_ge(
     uint gid [[thread_position_in_grid]])
 {
     if (gid == 0) {
-        gej_add_ge(r[0], a[0], b[0]);
+        gej a_thread = a[0];
+        ge b_thread = b[0];
+        gej r_thread;
+        gej_add_ge(r_thread, a_thread, b_thread);
+        r[0] = r_thread;
     }
 }
 
@@ -94,6 +112,8 @@ kernel void test_gej_set_infinity(
     uint gid [[thread_position_in_grid]])
 {
     if (gid == 0) {
-        gej_set_infinity(r[0]);
+        gej r_thread;
+        gej_set_infinity(r_thread);
+        r[0] = r_thread;
     }
 }
