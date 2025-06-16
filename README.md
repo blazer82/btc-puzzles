@@ -65,7 +65,7 @@ Due to these specific optimizations, this solver is not intended to be portable 
 The solver is configured through two types of files:
 
 -   **`puzzles.json`**: This file contains the definitions for the Bitcoin puzzles. Each puzzle entry includes its number, the target public key, and the key search range. You can add more puzzles to this file as needed.
--   **`profiles/`**: This directory contains `.ini` files that define solver profiles. Each profile specifies parameters like `num_walkers` (the number of kangaroos) and `distinguished_point_threshold`.
+-   **`profiles/`**: This directory contains `.ini` files that define solver profiles. Each profile specifies parameters like `num_walkers` (the number of kangaroos), `distinguished_point_threshold`, and `start_point_strategy`. The `start_point_strategy` can be `midpoint` (default, deterministic) or `random` (useful for running multiple independent solver instances).
     -   `verify.ini`: A profile for quick checks on easy puzzles.
     -   `solve.ini`: A profile for serious attempts on hard puzzles.
 

@@ -195,3 +195,23 @@ class TestKangarooRunner:
         # 8. Verify traps don't contain points from the other herd
         assert runner.wild_trap.get_point(dp_tame_point.point()) is None
         assert runner.tame_trap.get_point(dp_wild_point.point()) is None
+
+    def test_initialization_random_start(self, puzzle_def, profile_config, monkeypatch):
+        """Tests initialization with a random start point strategy."""
+        profile_config['start_point_strategy'] = 'random'
+
+        # Mock random.randint to return a predictable value (the end of the range)
+        range_end = int(puzzle_def['range_end'], 16)
+        monkeypatch.setattr(
+            'kangaroo_runner.random.randint',
+            lambda start, end: range_end
+        )
+
+        runner = KangarooRunner(puzzle_def, profile_config)
+        assert runner.start_key_tame == range_end
+
+    def test_initialization_invalid_strategy(self, puzzle_def, profile_config):
+        """Tests that an invalid start point strategy raises an error."""
+        profile_config['start_point_strategy'] = 'invalid_strategy'
+        with pytest.raises(ValueError, match="Unknown start_point_strategy"):
+            KangarooRunner(puzzle_def, profile_config)

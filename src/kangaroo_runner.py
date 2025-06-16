@@ -3,6 +3,7 @@ The core solver engine. Orchestrates multiple kangaroos, manages the PointTrap
 instances for tame and wild herds, detects collisions, and calculates the
 final private key.
 """
+import random
 from typing import Dict, List, Optional
 
 import cryptography_utils as crypto
@@ -37,6 +38,7 @@ class KangarooRunner:
         self.profile_config = profile_config
         self.dp_threshold = int(self.profile_config['distinguished_point_threshold'])
         num_walkers = int(self.profile_config['num_walkers'])
+        start_point_strategy = self.profile_config.get('start_point_strategy', 'midpoint')
 
         # Pre-compute hops
         self.precomputed_hops = hs.generate_precomputed_hops()
@@ -46,7 +48,16 @@ class KangarooRunner:
         self.wild_trap = dp.PointTrap()
 
         # Setup tame herd
-        self.start_key_tame = (int(self.puzzle_def['range_start'], 16) + int(self.puzzle_def['range_end'], 16)) // 2
+        range_start = int(self.puzzle_def['range_start'], 16)
+        range_end = int(self.puzzle_def['range_end'], 16)
+
+        if start_point_strategy == 'midpoint':
+            self.start_key_tame = (range_start + range_end) // 2
+        elif start_point_strategy == 'random':
+            self.start_key_tame = random.randint(range_start, range_end)
+        else:
+            raise ValueError(f"Unknown start_point_strategy: {start_point_strategy}")
+
         start_point_tame = crypto.scalar_multiply(self.start_key_tame)
         self.tame_kangaroos: List[Kangaroo] = [
             Kangaroo(initial_point=start_point_tame, is_tame=True) for _ in range(num_walkers)
