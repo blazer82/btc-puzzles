@@ -397,6 +397,32 @@ class TestFieldArithmetic:
         expected_one = np.array([1, 0, 0, 0, 0], dtype=np.uint64)
         assert np.array_equal(normalized_product_np, expected_one)
 
+    def test_ge_set_gej(self):
+        """
+        Tests the ge_set_gej Metal function.
+        This test converts an affine point to Jacobian (with Z=1), then converts
+        it back to affine and ensures the coordinates are unchanged.
+        """
+        helper = MetalTestHelper("test/metal/test_field.metal")
+
+        # Create a test Jacobian point (x=7, y=8, z=1)
+        test_gej_buffer = np.zeros(16, dtype=np.uint64)
+        test_gej_buffer[0:5] = [7, 0, 0, 0, 0]   # x
+        test_gej_buffer[5:10] = [8, 0, 0, 0, 0]  # y
+        test_gej_buffer[10:15] = [1, 0, 0, 0, 0] # z
+        test_gej_buffer[15] = 0                 # not infinity
+
+        # Run the conversion kernel
+        # Output is a `ge` struct, which is 11 ulongs (5 for x, 5 for y, 1 for inf)
+        gpu_result_buffer = helper.run_kernel("test_ge_set_gej", [test_gej_buffer], 11 * 8)
+
+        # Check infinity flag
+        assert gpu_result_buffer[10] == 0  # should not be infinity
+
+        # Check coordinates
+        assert np.array_equal(gpu_result_buffer[0:5], test_gej_buffer[0:5])  # x should match
+        assert np.array_equal(gpu_result_buffer[5:10], test_gej_buffer[5:10])  # y should match
+
     def test_gej_set_infinity(self):
         """
         Tests the gej_set_infinity Metal function.

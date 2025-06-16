@@ -55,6 +55,22 @@ kernel void test_fe_sqr(
 }
 
 /*
+ * Kernel to test ge_set_gej (convert Jacobian to affine).
+ */
+kernel void test_ge_set_gej(
+    device const gej* a [[buffer(0)]],
+    device ge* r       [[buffer(1)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid == 0) {
+        gej a_thread = a[0];
+        ge r_thread;
+        ge_set_gej(r_thread, a_thread);
+        r[0] = r_thread;
+    }
+}
+
+/*
  * Kernel to test fe_inv.
  */
 kernel void test_fe_inv(

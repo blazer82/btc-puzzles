@@ -76,6 +76,27 @@ static inline void gej_set_ge(thread gej &r, const thread ge &a) {
     fe_set_int(r.z, 1);
 }
 
+/* Set an affine group element from a Jacobian one. */
+static inline void ge_set_gej(thread ge &r, const thread gej &a) {
+    if (a.infinity) {
+        r.infinity = true;
+        fe_set_int(r.x, 0);
+        fe_set_int(r.y, 0);
+        return;
+    }
+    r.infinity = false;
+
+    fe z_inv, z_inv_sqr;
+    fe_inv(z_inv, a.z);
+    fe_sqr(z_inv_sqr, z_inv);
+    fe_mul(r.x, a.x, z_inv_sqr);
+    fe_mul(r.y, a.y, z_inv_sqr);
+    fe_mul(r.y, r.y, z_inv);
+
+    fe_normalize(r.x);
+    fe_normalize(r.y);
+}
+
 /* Conditionally move a Jacobian group element. */
 static inline void gej_cmov(thread gej &r, const thread gej &a, bool flag) {
     fe_cmov(r.x, a.x, flag);
