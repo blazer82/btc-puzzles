@@ -57,3 +57,34 @@ This project is exclusively designed and optimized for Apple Silicon (M-series c
 -   **Unified Memory**: The algorithm takes advantage of Apple's unified memory architecture to eliminate costly data transfers between the CPU and GPU, which is critical for an iterative, high-throughput algorithm like Pollard's Kangaroo.
 
 Due to these specific optimizations, this solver is not intended to be portable to other architectures (e.g., NVIDIA or AMD GPUs) without significant modification.
+
+## 5. How to Use
+
+### Configuration
+
+The solver is configured through two types of files:
+
+-   **`puzzles.json`**: This file contains the definitions for the Bitcoin puzzles. Each puzzle entry includes its number, the target public key, and the key search range. You can add more puzzles to this file as needed.
+-   **`profiles/`**: This directory contains `.ini` files that define solver profiles. Each profile specifies parameters like `num_walkers` (the number of kangaroos) and `distinguished_point_threshold`.
+    -   `verify.ini`: A profile for quick checks on easy puzzles.
+    -   `solve.ini`: A profile for serious attempts on hard puzzles.
+
+### Running the Solver
+
+To run the solver, execute the `src/main.py` script from the command line, specifying the puzzle number and the desired profile.
+
+**Command:**
+
+```bash
+python src/main.py --puzzle <number> --profile <name>
+```
+
+**Example:**
+
+To solve puzzle #5 using the `verify` profile, run:
+
+```bash
+python src/main.py --puzzle 5 --profile verify
+```
+
+The solver will then initialize and start searching for the private key, printing progress updates to the console.

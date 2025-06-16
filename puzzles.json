@@ -1,0 +1,56 @@
+[
+  {
+    "puzzle_number": 5,
+    "public_key": "02352bbf4a4cdd12564f93fa332ce333301d9ad40271f8107181340aef25be59d5",
+    "range_start": "0x10",
+    "range_end": "0x20"
+  },
+  {
+    "puzzle_number": 10,
+    "public_key": "03a7a4c30291ac1db24b4ab00c442aa832f7794b5a0959bec6e8d7fee802289dcd",
+    "range_start": "0x400",
+    "range_end": "0x800"
+  },
+  {
+    "puzzle_number": 15,
+    "public_key": "02fea58ffcf49566f6e9e9350cf5bca2861312f422966e8db16094beb14dc3df2c",
+    "range_start": "0x8000",
+    "range_end": "0x10000"
+  },
+  {
+    "puzzle_number": 20,
+    "public_key": "033c4a45cbd643ff97d77f41ea37e843648d50fd894b864b0d52febc62f6454f7c",
+    "range_start": "0x100000",
+    "range_end": "0x200000"
+  },
+  {
+    "puzzle_number": 25,
+    "public_key": "03057fbea3a2623382628dde556b2a0698e32428d3cd225f3bd034dca82dd7455a",
+    "range_start": "0x2000000",
+    "range_end": "0x4000000"
+  },
+  {
+    "puzzle_number": 30,
+    "public_key": "030d282cf2ff536d2c42f105d0b8588821a915dc3f9a05bd98bb23af67a2e92a5b",
+    "range_start": "0x40000000",
+    "range_end": "0x80000000"
+  },
+  {
+    "puzzle_number": 35,
+    "public_key": "02f6a8148a62320e149cb15c544fe8a25ab483a0095d2280d03b8a00a7feada13d",
+    "range_start": "0x800000000",
+    "range_end": "0x1000000000"
+  },
+  {
+    "puzzle_number": 40,
+    "public_key": "03a2efa402fd5268400c77c20e574ba86409ededee7c4020e4b9f0edbee53de0d4",
+    "range_start": "0x10000000000",
+    "range_end": "0x20000000000"
+  },
+  {
+    "puzzle_number": 135,
+    "public_key": "02145d2611c823a396ef6712ce0f712f09b9b4f3135e3e0aa3230fb9b6d08d1e16",
+    "range_start": "0x4000000000000000000000000000000000",
+    "range_end": "0x8000000000000000000000000000000000"
+  }
+]
