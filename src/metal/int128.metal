@@ -72,7 +72,7 @@ static inline void u128_rshift(thread uint128_t &r, uint n) {
         r.lo = r.hi >> (n - 64);
         r.hi = 0;
     } else if (n > 0) {
-        r.lo = (r.hi << (64 - n)) | (r.lo >> n);
+        r.lo = ((ulong)r.hi << (64 - n)) | (r.lo >> n);
         r.hi >>= n;
     }
 }
@@ -81,10 +81,23 @@ static inline ulong u128_to_u64(const thread uint128_t &a) {
    return a.lo;
 }
 
-static inline void i128_sub_u64(thread int128_t &r, ulong b) {
-    ulong old_lo = r.lo;
-    r.lo -= b;
-    r.hi -= (r.lo > old_lo);
+static inline ulong u128_hi_u64(const thread uint128_t &a) {
+   return a.hi;
+}
+
+static inline void u128_from_u64(thread uint128_t &r, ulong a) {
+   r.hi = 0;
+   r.lo = a;
+}
+
+static inline bool u128_check_bits(const thread uint128_t &r, uint n) {
+   return n >= 64 ? r.hi >> (n - 64) == 0
+                  : r.hi == 0 && r.lo >> n == 0;
+}
+
+static inline void u128_load(thread uint128_t &r, ulong hi, ulong lo) {
+    r.hi = hi;
+    r.lo = lo;
 }
 
 
@@ -109,7 +122,7 @@ static inline void i128_rshift(thread int128_t &r, uint n) {
         r.lo = (ulong)((long)r.hi >> (n - 64));
         r.hi = (ulong)((long)r.hi >> 63);
     } else if (n > 0) {
-        r.lo = (r.hi << (64 - n)) | (r.lo >> n);
+        r.lo = ((ulong)r.hi << (64 - n)) | (r.lo >> n);
         r.hi = (ulong)((long)r.hi >> n);
     }
 }
@@ -120,4 +133,36 @@ static inline ulong i128_to_u64(const thread int128_t &a) {
 
 static inline long i128_to_i64(const thread int128_t &a) {
    return (long)a.lo;
+}
+
+static inline void i128_from_i64(thread int128_t &r, long a) {
+   r.hi = (ulong)(a >> 63);
+   r.lo = (ulong)a;
+}
+
+static inline bool i128_eq_var(const thread int128_t &a, const thread int128_t &b) {
+   return a.hi == b.hi && a.lo == b.lo;
+}
+
+static inline bool i128_check_pow2(const thread int128_t &r, uint n, int sign) {
+    return n >= 64 ? r.hi == (ulong)sign << (n - 64) && r.lo == 0
+                   : r.hi == (ulong)(sign >> 1) && r.lo == (ulong)sign << n;
+}
+
+static inline void i128_load(thread int128_t &r, long hi, ulong lo) {
+    r.hi = (ulong)hi;
+    r.lo = lo;
+}
+
+static inline void i128_dissip_mul(thread int128_t &r, long a, long b) {
+   long hi;
+   ulong lo = (ulong)mul128(a, b, &hi);
+   hi += (r.lo < lo);
+   r.hi -= (ulong)hi;
+   r.lo -= lo;
+}
+
+static inline void i128_det(thread int128_t &r, long a, long b, long c, long d) {
+   i128_mul(r, a, d);
+   i128_dissip_mul(r, b, c);
 }
