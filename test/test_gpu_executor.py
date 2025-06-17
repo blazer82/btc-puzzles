@@ -127,3 +127,31 @@ class TestGpuExecutor:
         # 5. Verify no DPs are reported now
         dps_after_reset = executor.get_distinguished_points()
         assert len(dps_after_reset) == 0
+
+    def test_single_hop_correctness(self, executor, hop_points):
+        """
+        Tests that a single GPU hop produces the same result as a CPU-based
+        calculation using the coincurve library.
+        """
+        # 1. Setup initial state with a known point (Generator G)
+        g = crypto.get_generator_point()
+        executor.create_state_buffers([g])
+
+        # 2. Calculate the expected result on the CPU
+        # Determine which hop will be taken
+        g_x, _ = g.point()
+        hop_index = g_x % 16
+        hop_point_to_add = hop_points[hop_index]
+        # Perform addition using the trusted library
+        expected_point = crypto.point_add(g, hop_point_to_add)
+
+        # 3. Execute one step on the GPU
+        executor.execute_step()
+
+        # 4. Get the actual result from the GPU buffer
+        points_buffer = executor.points_buffer.contents().as_buffer(executor.points_buffer.length())
+        result_np = np.frombuffer(points_buffer, dtype=executor.ge_dtype, count=1)
+        actual_point = executor._pubkey_from_ge(result_np[0])
+
+        # 5. Assert that the GPU's result matches the CPU's result
+        assert actual_point.format() == expected_point.format()

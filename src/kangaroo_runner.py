@@ -1,33 +1,35 @@
 """
-The core solver engine. Orchestrates multiple kangaroos, manages the PointTrap
-instances for tame and wild herds, detects collisions, and calculates the
-final private key.
+The core solver engine. Orchestrates the GpuExecutor to run the Pollard's
+Kangaroo algorithm on the GPU. It manages the PointTrap instances for tame and
+wild herds, detects collisions, and calculates the final private key.
 """
 import random
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
 
 import cryptography_utils as crypto
 import distinguished_points as dp
 import hop_strategy as hs
-from kangaroo import Kangaroo
+from gpu_executor import GpuExecutor
 
 
 class KangarooRunner:
     """
-    Orchestrates the Pollard's Kangaroo search.
+    Orchestrates the Pollard's Kangaroo search using a GPU executor.
 
-    This class manages the two herds of kangaroos (tame and wild),
-    the distinguished point traps, and the main search loop.
+    This class manages the two herds of kangaroos (tame and wild) by
+    orchestrating the GpuExecutor, which runs the search in parallel on the
+    GPU. It handles the distinguished point traps and collision detection.
     """
 
     def __init__(self, puzzle_def: Dict, profile_config: Dict):
         """
-        Initializes the KangarooRunner.
+        Initializes the KangarooRunner and the GPU executors.
 
-        Sets up the initial state for all tame and wild kangaroos based on the
-        puzzle definition and solver profile. This includes pre-computing hops,
-        initializing traps, and performing warm-up hops for each kangaroo to
-        ensure they follow unique paths.
+        Sets up the initial state for all tame and wild kangaroos and passes
+        them to the GpuExecutor. This includes pre-computing hops and
+        initializing traps.
 
         Args:
             puzzle_def (Dict): The parameters for the specific puzzle.
@@ -43,11 +45,15 @@ class KangarooRunner:
         # Pre-compute hops
         self.precomputed_hops = hs.generate_precomputed_hops()
 
+        # Initialize GPU executors for each herd
+        self.tame_executor = GpuExecutor(hop_points=self.precomputed_hops, dp_threshold=self.dp_threshold)
+        self.wild_executor = GpuExecutor(hop_points=self.precomputed_hops, dp_threshold=self.dp_threshold)
+
         # Initialize traps
         self.tame_trap = dp.PointTrap()
         self.wild_trap = dp.PointTrap()
 
-        # Setup tame herd
+        # Setup tame herd initial state
         range_start = int(self.puzzle_def['range_start'], 16)
         range_end = int(self.puzzle_def['range_end'], 16)
 
@@ -59,83 +65,71 @@ class KangarooRunner:
             raise ValueError(f"Unknown start_point_strategy: {start_point_strategy}")
 
         start_point_tame = crypto.scalar_multiply(self.start_key_tame)
-        self.tame_kangaroos: List[Kangaroo] = [
-            Kangaroo(initial_point=start_point_tame, is_tame=True) for _ in range(num_walkers)
-        ]
+        initial_tame_points = [start_point_tame] * num_walkers
+        self.tame_executor.create_state_buffers(initial_tame_points)
 
-        # Setup wild herd
+        # Setup wild herd initial state
         target_pubkey_bytes = bytes.fromhex(self.puzzle_def['public_key'])
         start_point_wild = crypto.point_from_bytes(target_pubkey_bytes)
-        self.wild_kangaroos: List[Kangaroo] = [
-            Kangaroo(initial_point=start_point_wild, is_tame=False) for _ in range(num_walkers)
-        ]
+        initial_wild_points = [start_point_wild] * num_walkers
+        self.wild_executor.create_state_buffers(initial_wild_points)
 
         self.total_hops_performed = 0
 
-        # Perform warm-up hops to differentiate paths
-        for i in range(num_walkers):
-            for _ in range(i):
-                self.tame_kangaroos[i].hop(self.precomputed_hops)
-                self.wild_kangaroos[i].hop(self.precomputed_hops)
-                self.total_hops_performed += 2  # One for tame, one for wild
-
     def step(self) -> Optional[int]:
         """
-        Executes one parallel hop for all kangaroos.
+        Executes one parallel step on the GPU for all kangaroos.
 
-        Each kangaroo in both the tame and wild herds takes a single step.
-        After the step, it checks if any kangaroo has landed on a distinguished
-        point. If so, it checks for a collision in the opposite herd's trap.
-        If a collision is found, the private key is calculated and returned.
-        Otherwise, the new distinguished points are added to their respective
-        traps.
+        This method dispatches the Metal kernel to perform one hop for each
+        kangaroo in both herds. It then retrieves any distinguished points
+        found by the GPU, checks for collisions, and adds new points to the
+        appropriate traps.
 
         Returns:
             Optional[int]: The solved private key if a collision occurs,
                            otherwise None.
         """
-        new_distinguished_tame = []
-        new_distinguished_wild = []
+        # 1. Hop all kangaroos on the GPU
+        self.tame_executor.execute_step()
+        self.wild_executor.execute_step()
 
-        # 1. Hop all kangaroos
-        for k in self.tame_kangaroos + self.wild_kangaroos:
-            k.hop(self.precomputed_hops)
+        num_walkers = self.tame_executor.num_walkers
+        self.total_hops_performed += 2 * num_walkers
 
-        self.total_hops_performed += len(self.tame_kangaroos) + len(self.wild_kangaroos)
+        # 2. Get distinguished points from GPU
+        new_distinguished_tame = self.tame_executor.get_distinguished_points()
+        new_distinguished_wild = self.wild_executor.get_distinguished_points()
 
-        # 2. Collect new distinguished points
-        for k in self.tame_kangaroos:
-            x_coord = crypto.get_x_coordinate_int(k.current_point)
-            if dp.is_distinguished(x_coord, self.dp_threshold):
-                new_distinguished_tame.append((k.get_xy_tuple(), k.distance))
-
-        for k in self.wild_kangaroos:
-            x_coord = crypto.get_x_coordinate_int(k.current_point)
-            if dp.is_distinguished(x_coord, self.dp_threshold):
-                new_distinguished_wild.append((k.get_xy_tuple(), k.distance))
+        # Reset GPU counters for the next step
+        self.tame_executor.reset_dp_counter()
+        self.wild_executor.reset_dp_counter()
 
         # 3. Check for collisions
         curve_n = crypto.get_curve_order_n()
 
         # Check if a new tame point is in the wild trap
-        for point_xy, dist_tame in new_distinguished_tame:
+        for pubkey, dist_tame in new_distinguished_tame:
+            point_xy = pubkey.point()
             dist_wild = self.wild_trap.get_point(point_xy)
             if dist_wild is not None:
                 # Collision found!
                 return (self.start_key_tame + dist_tame - dist_wild) % curve_n
 
         # Check if a new wild point is in the tame trap
-        for point_xy, dist_wild in new_distinguished_wild:
+        for pubkey, dist_wild in new_distinguished_wild:
+            point_xy = pubkey.point()
             dist_tame = self.tame_trap.get_point(point_xy)
             if dist_tame is not None:
                 # Collision found!
                 return (self.start_key_tame + dist_tame - dist_wild) % curve_n
 
         # 4. If no collision, add new points to traps
-        for point_xy, dist_tame in new_distinguished_tame:
+        for pubkey, dist_tame in new_distinguished_tame:
+            point_xy = pubkey.point()
             self.tame_trap.add_point(point_xy, dist_tame)
 
-        for point_xy, dist_wild in new_distinguished_wild:
+        for pubkey, dist_wild in new_distinguished_wild:
+            point_xy = pubkey.point()
             self.wild_trap.add_point(point_xy, dist_wild)
 
         return None
@@ -143,8 +137,6 @@ class KangarooRunner:
     def get_total_hops_performed(self) -> int:
         """
         Provides the cumulative number of hops performed by all kangaroos.
-
-        This includes the initial warm-up hops.
 
         Returns:
             int: The total number of hops.

@@ -75,15 +75,15 @@ kernel void kangaroo_step(
     // 5. Check if the new point is distinguished.
     // This is a port of distinguished_points.is_distinguished.
     // The mask is for the lower `dp_threshold` bits.
-    ulong dp_mask = (1UL << dp_threshold) - 1;
-    bool is_dp = (new_point.x.n[0] & dp_mask) == 0;
+    ulong dp_mask = (dp_threshold > 0) ? ((1UL << dp_threshold) - 1) : 0;
+    bool is_dp = (dp_threshold == 0) || ((new_point.x.n[0] & dp_mask) == 0);
 
     // 6. Write back the new state for the next iteration.
     current_points[gid] = new_point;
     distances[gid] = new_distance;
 
     // 7. If it's a distinguished point, report it back to the CPU.
-    if (is_dp) {
+    if (is_dp && !new_point.infinity) {
         // Atomically get a unique index to write the result to.
         uint result_idx = atomic_fetch_add_explicit(dp_counter, 1, memory_order_relaxed);
 

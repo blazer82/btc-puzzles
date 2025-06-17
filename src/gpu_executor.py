@@ -121,16 +121,21 @@ class GpuExecutor:
         n[1] = (value >> 52) & self.M52
         n[2] = (value >> 104) & self.M52
         n[3] = (value >> 156) & self.M52
-        n[4] = (value >> 208) & self.M52
+        n[4] = (value >> 208) & ((1 << 48) - 1)  # Top limb is only 48 bits
         return n
 
     def _int_from_fe(self, fe_struct: np.ndarray) -> int:
         """Converts a 5x52-bit `fe` limb array back to a Python integer."""
-        return (int(fe_struct[0]) |
-                (int(fe_struct[1]) << 52) |
-                (int(fe_struct[2]) << 104) |
-                (int(fe_struct[3]) << 156) |
-                (int(fe_struct[4]) << 208))
+        # Ensure we only use the valid bits from each limb
+        result = (int(fe_struct[0] & self.M52) |
+                 (int(fe_struct[1] & self.M52) << 52) |
+                 (int(fe_struct[2] & self.M52) << 104) |
+                 (int(fe_struct[3] & self.M52) << 156) |
+                 (int(fe_struct[4] & ((1 << 48) - 1)) << 208))
+        
+        # Ensure the result is within the valid field range
+        p = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
+        return result % p
 
     def _ge_from_pubkey(self, pubkey: PublicKey) -> np.ndarray:
         """Converts a coincurve PublicKey to a Metal `ge` struct."""
@@ -143,12 +148,23 @@ class GpuExecutor:
 
     def _pubkey_from_ge(self, ge_struct: np.ndarray) -> PublicKey:
         """Converts a Metal `ge` struct back to a coincurve PublicKey."""
+        if ge_struct[10] != 0: # Check infinity flag
+            # This case should ideally not be hit if logic is correct, as
+            # infinity points are not reported as DPs. However, for robustness
+            # during testing and debugging, we handle it explicitly.
+            raise ValueError("Cannot convert point at infinity to PublicKey.")
+
         x = self._int_from_fe(ge_struct[0:5])
         y = self._int_from_fe(ge_struct[5:10])
         # Reconstruct from compressed format: 0x02/0x03 prefix + 32-byte x
-        prefix = b'\x02' if y % 2 == 0 else b'\x03'
-        x_bytes = x.to_bytes(32, 'big')
-        return crypto.point_from_bytes(prefix + x_bytes)
+        try:
+            prefix = b'\x02' if y % 2 == 0 else b'\x03'
+            x_bytes = x.to_bytes(32, 'big')
+            return crypto.point_from_bytes(prefix + x_bytes)
+        except (ValueError, OverflowError) as e:
+            print(f"DEBUG: Failed to create PublicKey. Error: {e}")
+            print(f"DEBUG: Raw ge_struct: {ge_struct}")
+            raise
 
     # --- Buffer Management and Kernel Execution ---
 

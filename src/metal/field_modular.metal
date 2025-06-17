@@ -43,7 +43,7 @@ constant modinv64_modinfo const_modinfo_fe = {
  * to it to bring it to range [0,modulus). If sign < 0, the input will also be negated in the
  * process. The input must have limbs in range (-2^62,2^62). The output will have limbs in range
  * [0,2^62). */
-static void modinv64_normalize_62(thread modinv64_signed62 &r_in, long sign, constant modinv64_modinfo& modinfo) {
+static void modinv64_normalize_62(thread modinv64_signed62 &r_in, long sign, const constant modinv64_modinfo& modinfo) {
     const long M62 = (long)(0xFFFFFFFFFFFFFFFFUL >> 2);
     long r0 = r_in.v[0], r1 = r_in.v[1], r2 = r_in.v[2], r3 = r_in.v[3], r4 = r_in.v[4];
     volatile long cond_add, cond_negate;
@@ -123,7 +123,7 @@ static long modinv64_divsteps_59(long zeta, ulong f0, ulong g0, thread modinv64_
     return zeta;
 }
 
-static void modinv64_update_de_62(thread modinv64_signed62 &d, thread modinv64_signed62 &e, const thread modinv64_trans2x2 &t, constant modinv64_modinfo& modinfo) {
+static void modinv64_update_de_62(thread modinv64_signed62 &d, thread modinv64_signed62 &e, const thread modinv64_trans2x2 &t, const constant modinv64_modinfo& modinfo) {
     const ulong M62 = 0xFFFFFFFFFFFFFFFFUL >> 2;
     const long d0 = d.v[0], d1 = d.v[1], d2 = d.v[2], d3 = d.v[3], d4 = d.v[4];
     const long e0 = e.v[0], e1 = e.v[1], e2 = e.v[2], e3 = e.v[3], e4 = e.v[4];
@@ -146,6 +146,7 @@ static void modinv64_update_de_62(thread modinv64_signed62 &d, thread modinv64_s
 
     i128_accum_mul(cd, modinfo.modulus.v[0], md);
     i128_accum_mul(ce, modinfo.modulus.v[0], me);
+    // The original code verifies that the bottom 62 bits are zero before shifting
     i128_rshift(cd, 62);
     i128_rshift(ce, 62);
 
@@ -241,7 +242,7 @@ static void modinv64_update_fg_62(thread modinv64_signed62 &f, thread modinv64_s
     g.v[4] = i128_to_i64(cg);
 }
 
-static void modinv64_inv(thread modinv64_signed62 &x, constant modinv64_modinfo& modinfo) {
+static void modinv64_inv(thread modinv64_signed62 &x, const constant modinv64_modinfo& modinfo) {
     modinv64_signed62 d = {{0, 0, 0, 0, 0}};
     modinv64_signed62 e = {{1, 0, 0, 0, 0}};
     modinv64_signed62 f = modinfo.modulus;
@@ -295,7 +296,7 @@ static inline void fe_normalize(thread fe &r) {
     const ulong M52 = 0xFFFFFFFFFFFFFUL;
 
     x = t4 >> 48;
-    t4 &= 0x0FFFFFFFFFFFFUL;
+    t4 &= 0x0FFFFFFFFFFFFULL;
 
     t0 += x * 0x1000003D1UL;
     t1 += (t0 >> 52); t0 &= M52;
@@ -303,7 +304,7 @@ static inline void fe_normalize(thread fe &r) {
     t3 += (t2 >> 52); t2 &= M52; m &= t2;
     t4 += (t3 >> 52); t3 &= M52; m &= t3;
 
-    x = (t4 >> 48) | ((t4 == 0x0FFFFFFFFFFFFUL) & (m == M52) & (t0 >= 0xFFFFEFFFFFC2FUL));
+    x = (t4 >> 48) | ((t4 == 0x0FFFFFFFFFFFFULL) & (m == M52) & (t0 >= 0xFFFFEFFFFFC2FULL));
 
     t0 += x * 0x1000003D1UL;
     t1 += (t0 >> 52); t0 &= M52;
@@ -311,7 +312,7 @@ static inline void fe_normalize(thread fe &r) {
     t3 += (t2 >> 52); t2 &= M52;
     t4 += (t3 >> 52); t3 &= M52;
 
-    t4 &= 0x0FFFFFFFFFFFFUL;
+    t4 &= 0x0FFFFFFFFFFFFULL;
 
     r.n[0] = t0; r.n[1] = t1; r.n[2] = t2; r.n[3] = t3; r.n[4] = t4;
 }
@@ -330,20 +331,17 @@ static inline void fe_inv(thread fe &r, const thread fe &x) {
     fe_from_signed62(r, s);
 }
 
-/* Negate a field element without modular reduction. r = -a. */
-static inline void fe_negate_raw(thread fe &r, const thread fe &a) {
-    fe zero = {{0,0,0,0,0}};
-    r = zero;
-    fe_sub(r, a);
+/* Negate a field element with specified magnitude. Ported from secp256k1_fe_impl_negate_unchecked. */
+static inline void fe_negate(thread fe &r, const thread fe &a, int m) {
+    const ulong M52 = 0xFFFFFFFFFFFFFUL;
+    r.n[0] = 0xFFFFEFFFFFC2FUL * 2 * (m + 1) - a.n[0];
+    r.n[1] = M52 * 2 * (m + 1) - a.n[1];
+    r.n[2] = M52 * 2 * (m + 1) - a.n[2];
+    r.n[3] = M52 * 2 * (m + 1) - a.n[3];
+    r.n[4] = 0x0FFFFFFFFFFFFULL * 2 * (m + 1) - a.n[4];
 }
 
-/* Negate a field element. Note: this is a simplified, non-optimized version. */
-static inline void fe_negate(thread fe &r, const thread fe &a) {
-    fe_negate_raw(r, a);
-    fe_normalize(r);
-}
-
-/* Check if a field element normalizes to zero. */
+/* Check if a field element normalizes to zero. Ported from secp256k1_fe_impl_normalizes_to_zero. */
 static inline bool fe_normalizes_to_zero(const thread fe &r) {
     ulong t0 = r.n[0], t1 = r.n[1], t2 = r.n[2], t3 = r.n[3], t4 = r.n[4];
     ulong z0, z1;
@@ -353,11 +351,13 @@ static inline bool fe_normalizes_to_zero(const thread fe &r) {
     t4 &= 0x0FFFFFFFFFFFFUL;
 
     t0 += x * 0x1000003D1UL;
+
     t1 += (t0 >> 52); t0 &= M52; z0  = t0; z1  = t0 ^ 0x1000003D0UL;
     t2 += (t1 >> 52); t1 &= M52; z0 |= t1; z1 &= t1;
     t3 += (t2 >> 52); t2 &= M52; z0 |= t2; z1 &= t2;
     t4 += (t3 >> 52); t3 &= M52; z0 |= t3; z1 &= t3;
-                                z0 |= t4; z1 &= t4 ^ 0xF000000000000UL;
+                                     z0 |= t4; z1 &= t4 ^ 0xF000000000000UL;
 
-    return (z0 == 0) | (z1 == M52);
+    // The C implementation compares z1 to (uint64_t)-1.
+    return (z0 == 0) | (z1 == 0xFFFFFFFFFFFFFFFFUL);
 }
