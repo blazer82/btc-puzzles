@@ -1,7 +1,7 @@
 import pytest
 
 import cryptography_utils as crypto
-from kangaroo_runner import KangarooRunner
+from kangaroo_runner_cpu import KangarooRunnerCPU
 
 
 @pytest.fixture
@@ -34,7 +34,7 @@ def profile_config():
 class TestKangarooRunner:
     def test_initialization(self, puzzle_def, profile_config):
         """Tests that the runner initializes correctly."""
-        runner = KangarooRunner(puzzle_def, profile_config)
+        runner = KangarooRunnerCPU(puzzle_def, profile_config)
         num_walkers = int(profile_config['num_walkers'])
 
         # Check herd sizes
@@ -61,7 +61,7 @@ class TestKangarooRunner:
 
     def test_step_updates_total_hops(self, puzzle_def, profile_config):
         """Tests that a single step correctly updates the total hop count."""
-        runner = KangarooRunner(puzzle_def, profile_config)
+        runner = KangarooRunnerCPU(puzzle_def, profile_config)
         initial_hops = runner.get_total_hops_performed()
         num_walkers = int(profile_config['num_walkers'])
 
@@ -78,7 +78,7 @@ class TestKangarooRunner:
         """
         # Set a very high DP threshold to prevent accidental finds
         profile_config['distinguished_point_threshold'] = '256'
-        runner = KangarooRunner(puzzle_def, profile_config)
+        runner = KangarooRunnerCPU(puzzle_def, profile_config)
 
         # 1. Create a fake collision point and add it to the wild trap
         collision_point = crypto.scalar_multiply(12345)
@@ -95,12 +95,12 @@ class TestKangarooRunner:
         # 3. Patch `is_distinguished` to fire only for our collision point
         collision_x = crypto.get_x_coordinate_int(collision_point)
         monkeypatch.setattr(
-            'kangaroo_runner.dp.is_distinguished',
+            'kangaroo_runner_cpu.dp.is_distinguished',
             lambda x, threshold: x == collision_x
         )
 
         # 4. Patch `hop` to do nothing, so our manual setup isn't disturbed
-        monkeypatch.setattr('kangaroo_runner.Kangaroo.hop', lambda self, precomputed_hops: None)
+        monkeypatch.setattr('kangaroo_runner_cpu.Kangaroo.hop', lambda self, precomputed_hops: None)
 
         # 5. Execute the step and check for the correct solution
         solution = runner.step()
@@ -116,7 +116,7 @@ class TestKangarooRunner:
         that is already in the tame herd's trap.
         """
         profile_config['distinguished_point_threshold'] = '256'
-        runner = KangarooRunner(puzzle_def, profile_config)
+        runner = KangarooRunnerCPU(puzzle_def, profile_config)
 
         # 1. Create a fake collision point and add it to the tame trap
         collision_point = crypto.scalar_multiply(54321)
@@ -133,12 +133,12 @@ class TestKangarooRunner:
         # 3. Patch `is_distinguished` to fire only for our collision point
         collision_x = crypto.get_x_coordinate_int(collision_point)
         monkeypatch.setattr(
-            'kangaroo_runner.dp.is_distinguished',
+            'kangaroo_runner_cpu.dp.is_distinguished',
             lambda x, threshold: x == collision_x
         )
 
         # 4. Patch `hop` to do nothing
-        monkeypatch.setattr('kangaroo_runner.Kangaroo.hop', lambda self, precomputed_hops: None)
+        monkeypatch.setattr('kangaroo_runner_cpu.Kangaroo.hop', lambda self, precomputed_hops: None)
 
         # 5. Execute the step and check for the correct solution
         solution = runner.step()
@@ -154,7 +154,7 @@ class TestKangarooRunner:
         they are correctly added to their respective traps.
         """
         profile_config['distinguished_point_threshold'] = '256'
-        runner = KangarooRunner(puzzle_def, profile_config)
+        runner = KangarooRunnerCPU(puzzle_def, profile_config)
 
         # 1. Define two points that will become distinguished
         dp_tame_point = crypto.scalar_multiply(100)
@@ -175,12 +175,12 @@ class TestKangarooRunner:
         dp_tame_x = crypto.get_x_coordinate_int(dp_tame_point)
         dp_wild_x = crypto.get_x_coordinate_int(dp_wild_point)
         monkeypatch.setattr(
-            'kangaroo_runner.dp.is_distinguished',
+            'kangaroo_runner_cpu.dp.is_distinguished',
             lambda x, threshold: x in (dp_tame_x, dp_wild_x)
         )
 
         # 4. Patch `hop` to do nothing
-        monkeypatch.setattr('kangaroo_runner.Kangaroo.hop', lambda self, precomputed_hops: None)
+        monkeypatch.setattr('kangaroo_runner_cpu.Kangaroo.hop', lambda self, precomputed_hops: None)
 
         # 5. Execute the step
         solution = runner.step()
@@ -203,15 +203,51 @@ class TestKangarooRunner:
         # Mock random.randint to return a predictable value (the end of the range)
         range_end = int(puzzle_def['range_end'], 16)
         monkeypatch.setattr(
-            'kangaroo_runner.random.randint',
+            'kangaroo_runner_cpu.random.randint',
             lambda start, end: range_end
         )
 
-        runner = KangarooRunner(puzzle_def, profile_config)
+        runner = KangarooRunnerCPU(puzzle_def, profile_config)
         assert runner.start_key_tame == range_end
 
     def test_initialization_invalid_strategy(self, puzzle_def, profile_config):
         """Tests that an invalid start point strategy raises an error."""
         profile_config['start_point_strategy'] = 'invalid_strategy'
         with pytest.raises(ValueError, match="Unknown start_point_strategy"):
-            KangarooRunner(puzzle_def, profile_config)
+            KangarooRunnerCPU(puzzle_def, profile_config)
+            
+    def test_solve_puzzle_5_e2e(self):
+        """
+        Performs an end-to-end test, solving puzzle #5.
+        This verifies that the CPU workflow can solve a puzzle from the set.
+        """
+        # Load puzzle #5 definition directly
+        puzzle_5_def = {
+            "puzzle_number": 5,
+            "public_key": "02352bbf4a4cdd12564f93fa332ce333301d9ad40271f8107181340aef25be59d5",
+            "range_start": "0x10",
+            "range_end": "0x20",
+        }
+        
+        # Use a fast profile with a low DP threshold to ensure quick collision
+        fast_profile = {
+            "num_walkers": "2",
+            "distinguished_point_threshold": "2",  # Every point is distinguished
+            "start_point_strategy": "midpoint",  # Midpoint for deterministic start
+        }
+        
+        runner = KangarooRunnerCPU(puzzle_5_def, fast_profile)
+        
+        solution = None
+        # With a low DP threshold, this should be found very quickly
+        max_steps = 10000
+        for i in range(max_steps):
+            solution = runner.step()
+            if solution is not None:
+                break
+        
+        assert solution is not None, f"Solver failed to find a solution for puzzle #5 within {max_steps} steps"
+        
+        # The private key for puzzle #5 is 21
+        expected_solution = 21
+        assert solution == expected_solution

@@ -12,7 +12,7 @@ import hop_strategy as hs
 from kangaroo import Kangaroo
 
 
-class KangarooRunner:
+class KangarooRunnerCPU:
     """
     Orchestrates the Pollard's Kangaroo search.
 
@@ -22,7 +22,7 @@ class KangarooRunner:
 
     def __init__(self, puzzle_def: Dict, profile_config: Dict):
         """
-        Initializes the KangarooRunner.
+        Initializes the KangarooRunnerCPU.
 
         Sets up the initial state for all tame and wild kangaroos based on the
         puzzle definition and solver profile. This includes pre-computing hops,
