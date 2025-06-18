@@ -1173,10 +1173,11 @@ class TestFieldArithmetic:
         assert np.array_equal(affine_result[0:5], simple_jac[0:5]), "X coordinate should be unchanged when z=1"
         assert np.array_equal(affine_result[5:10], simple_jac[5:10]), "Y coordinate should be unchanged when z=1"
 
+        
     def test_add_point_to_itself(self):
         """
         Tests adding a point to itself, which should give the same result as doubling.
-        This tests a special case in the point addition formula.
+        This version uses a more robust approach with separate copies and conversion cycles.
         """
         helper = MetalTestHelper("test/metal/test_field.metal")
         
@@ -1208,31 +1209,23 @@ class TestFieldArithmetic:
         p_jac[10:15] = [1, 0, 0, 0, 0]  # z = 1
         p_jac[15] = 0  # not infinity
         
-        # Run the test kernel that computes both addition and doubling
-        result = helper.run_kernel("test_add_point_to_itself", [p_jac], 32 * 8)
+        # Run the kernel
+        debug_states_buffer = np.zeros(64, dtype=np.uint64)  # Buffer still needed by the kernel
+        add_result_buffer = np.zeros(16, dtype=np.uint64)
+        double_result_buffer = np.zeros(16, dtype=np.uint64)
         
-        # Extract the two results (each is 16 uint64 values)
-        add_result = result[0:16]
-        double_result = result[16:32]
+        helper.run_kernel("test_add_point_to_itself", 
+                         [p_jac, debug_states_buffer, add_result_buffer, double_result_buffer], 
+                         8)
         
-        # Convert both to affine for comparison
-        add_affine = helper.run_kernel("test_ge_set_gej", [add_result], 11 * 8)
-        double_affine = helper.run_kernel("test_ge_set_gej", [double_result], 11 * 8)
+        # Convert results to affine for comparison
+        add_affine = helper.run_kernel("test_ge_set_gej", [add_result_buffer], 11 * 8)
+        double_affine = helper.run_kernel("test_ge_set_gej", [double_result_buffer], 11 * 8)
         
-        # Debug: Check if either result is infinity
-        if add_result[15] == 1:
-            print(f"Add result is infinity")
-        if double_result[15] == 1:
-            print(f"Double result is infinity")
-        if add_affine[10] == 1:
-            print(f"Add affine result is infinity")
-        if double_affine[10] == 1:
-            print(f"Double affine result is infinity")
-            
         # The results should be identical
-        assert np.array_equal(add_affine[0:5], double_affine[0:5]), f"X coords differ: Add={add_affine[0:5]}, Double={double_affine[0:5]}"
-        assert np.array_equal(add_affine[5:10], double_affine[5:10]), f"Y coords differ: Add={add_affine[5:10]}, Double={double_affine[5:10]}"
-        assert add_affine[10] == double_affine[10], f"Infinity flags differ: Add={add_affine[10]}, Double={double_affine[10]}"
+        assert np.array_equal(add_affine[0:5], double_affine[0:5]), "X coordinates should match"
+        assert np.array_equal(add_affine[5:10], double_affine[5:10]), "Y coordinates should match"
+        assert add_affine[10] == double_affine[10], "Infinity flags should match"
 
     def test_field_ops_with_secp256k1_coords(self):
         """
@@ -1457,3 +1450,141 @@ class TestFieldArithmetic:
         # None of the coordinates should be zero for a valid doubling
         assert not (x_new_is_zero and y_new_is_zero and z_new_is_zero), "Doubled point should not be zero"
         assert not z_new_is_zero, "Z coordinate should not be zero after doubling"
+
+    def test_coordinate_conversion_precision(self):
+        """
+        Tests whether coordinate conversion (Jacobian -> Affine -> Jacobian) preserves precision.
+        This checks if the conversion cycle introduces errors that could cause gej_double to fail.
+        """
+        helper = MetalTestHelper("test/metal/test_field.metal")
+        
+        # Use the secp256k1 generator point G
+        g_x = 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798
+        g_y = 0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8
+        
+        # Convert to 5x52 bit limb representation
+        g_x_limbs = [
+            g_x & 0xFFFFFFFFFFFFF,
+            (g_x >> 52) & 0xFFFFFFFFFFFFF,
+            (g_x >> 104) & 0xFFFFFFFFFFFFF,
+            (g_x >> 156) & 0xFFFFFFFFFFFFF,
+            (g_x >> 208)
+        ]
+        
+        g_y_limbs = [
+            g_y & 0xFFFFFFFFFFFFF,
+            (g_y >> 52) & 0xFFFFFFFFFFFFF,
+            (g_y >> 104) & 0xFFFFFFFFFFFFF,
+            (g_y >> 156) & 0xFFFFFFFFFFFFF,
+            (g_y >> 208)
+        ]
+        
+        # Create original Jacobian point G with z=1
+        original_jac = np.zeros(16, dtype=np.uint64)
+        original_jac[0:5] = g_x_limbs  # x
+        original_jac[5:10] = g_y_limbs  # y
+        original_jac[10:15] = [1, 0, 0, 0, 0]  # z = 1
+        original_jac[15] = 0  # not infinity
+        
+        # Convert to affine
+        affine_point = helper.run_kernel("test_ge_set_gej", [original_jac], 11 * 8)
+        
+        # Convert back to Jacobian
+        converted_jac = helper.run_kernel("test_gej_set_ge", [affine_point], 16 * 8)
+        
+        # Compare original and converted Jacobian coordinates
+        print(f"Original Jacobian coordinates:")
+        print(f"  X: {original_jac[0:5]}")
+        print(f"  Y: {original_jac[5:10]}")
+        print(f"  Z: {original_jac[10:15]}")
+        print(f"  Infinity: {original_jac[15]}")
+        
+        print(f"Converted Jacobian coordinates:")
+        print(f"  X: {converted_jac[0:5]}")
+        print(f"  Y: {converted_jac[5:10]}")
+        print(f"  Z: {converted_jac[10:15]}")
+        print(f"  Infinity: {converted_jac[15]}")
+        
+        # Test doubling both versions
+        original_doubled = helper.run_kernel("test_gej_double", [original_jac], 16 * 8)
+        converted_doubled = helper.run_kernel("test_gej_double", [converted_jac], 16 * 8)
+        
+        print(f"Original doubled result infinity flag: {original_doubled[15]}")
+        print(f"Converted doubled result infinity flag: {converted_doubled[15]}")
+        
+        # If the conversion cycle introduces errors, the doubling results will differ
+        if original_doubled[15] != converted_doubled[15]:
+            print("ERROR: Conversion cycle affects doubling behavior!")
+            print(f"Original point doubling produces infinity: {original_doubled[15] == 1}")
+            print(f"Converted point doubling produces infinity: {converted_doubled[15] == 1}")
+            
+        # The coordinates should be identical after conversion cycle (since z=1)
+        coords_match = (np.array_equal(original_jac[0:5], converted_jac[0:5]) and 
+                       np.array_equal(original_jac[5:10], converted_jac[5:10]) and
+                       np.array_equal(original_jac[10:15], converted_jac[10:15]))
+        
+        if not coords_match:
+            print("WARNING: Coordinate conversion cycle does not preserve exact values!")
+            
+        # Both doubling operations should produce the same result
+        assert original_doubled[15] == converted_doubled[15], "Conversion cycle should not affect doubling behavior"
+
+    def test_gej_double_isolated_secp256k1(self):
+        """
+        Tests gej_double in complete isolation with the secp256k1 generator point.
+        This isolates whether the issue is in gej_double itself or in the kernel structure.
+        """
+        helper = MetalTestHelper("test/metal/test_field.metal")
+        
+        # Use the exact same secp256k1 generator point as the failing test
+        g_x = 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798
+        g_y = 0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8
+        
+        # Convert to 5x52 bit limb representation
+        g_x_limbs = [
+            g_x & 0xFFFFFFFFFFFFF,
+            (g_x >> 52) & 0xFFFFFFFFFFFFF,
+            (g_x >> 104) & 0xFFFFFFFFFFFFF,
+            (g_x >> 156) & 0xFFFFFFFFFFFFF,
+            (g_x >> 208)
+        ]
+        
+        g_y_limbs = [
+            g_y & 0xFFFFFFFFFFFFF,
+            (g_y >> 52) & 0xFFFFFFFFFFFFF,
+            (g_y >> 104) & 0xFFFFFFFFFFFFF,
+            (g_y >> 156) & 0xFFFFFFFFFFFFF,
+            (g_y >> 208)
+        ]
+        
+        # Create the exact same Jacobian point as in the failing test
+        p_jac = np.zeros(16, dtype=np.uint64)
+        p_jac[0:5] = g_x_limbs  # Generator point x
+        p_jac[5:10] = g_y_limbs  # Generator point y
+        p_jac[10:15] = [1, 0, 0, 0, 0]  # z = 1
+        p_jac[15] = 0  # not infinity
+        
+        # Call gej_double directly with no other operations in the kernel
+        double_result = helper.run_kernel("test_gej_double", [p_jac], 16 * 8)
+        
+        # This should NOT produce infinity
+        if double_result[15] == 1:
+            print(f"ERROR: Isolated gej_double with secp256k1 generator produced infinity!")
+            print(f"Input point: {p_jac}")
+            print(f"Output point: {double_result}")
+            pytest.fail("gej_double should not produce infinity for secp256k1 generator in isolation")
+        
+        # Verify the result is valid
+        assert double_result[15] == 0, "Isolated gej_double should not produce infinity"
+        
+        # Convert to affine to verify coordinates
+        affine_result = helper.run_kernel("test_ge_set_gej", [double_result], 11 * 8)
+        assert affine_result[10] == 0, "Converted result should not be infinity"
+        
+        # Coordinates should be non-zero
+        x_is_zero = all(x == 0 for x in affine_result[0:5])
+        y_is_zero = all(y == 0 for y in affine_result[5:10])
+        assert not (x_is_zero and y_is_zero), "Doubled generator should not be zero point"
+        
+        print(f"SUCCESS: Isolated gej_double with secp256k1 generator works correctly")
+        print(f"Result coordinates: X={affine_result[0:5]}, Y={affine_result[5:10]}")

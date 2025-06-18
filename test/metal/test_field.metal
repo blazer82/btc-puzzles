@@ -275,35 +275,147 @@ kernel void test_gej_double_debug(
     if (gid == 0) {
         gej a_thread = a[0];
         fe l, s, t;
-        
+
         // Step 1: S = Y^2
         fe_sqr(s, a_thread.y);
         debug_values[0] = s;
-        
+
         // Step 2: L = X^2
         fe_sqr(l, a_thread.x);
         debug_values[1] = l;
-        
+
         // Step 3: L = 3*L
         fe_mul_int(l, 3);
         debug_values[2] = l;
-        
+
         // Step 4: L = L/2
         fe_half(l);
         debug_values[3] = l;
-        
+
         // Step 5: T = -S
         fe_negate(t, s, 1);
         debug_values[4] = t;
-        
+
         // Step 6: T = T * X
         fe_mul(t, t, a_thread.x);
         debug_values[5] = t;
-        
+
         // Step 7: Z_new = Y * Z
         fe z_new;
         fe_mul(z_new, a_thread.z, a_thread.y);
         debug_values[6] = z_new;
+    }
+}
+
+/*
+ * Kernel to test the exact same sequence as test_add_point_to_itself
+ * but with both operations using the same input point (no conversion cycle).
+ */
+kernel void test_add_vs_double_same_input(
+    device const gej* p [[buffer(0)]],
+    device gej* r_add [[buffer(1)]],
+    device gej* r_double [[buffer(2)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid == 0) {
+        gej p_thread = p[0];
+
+        // Convert p to affine once
+        ge p_affine;
+        ge_set_gej(p_affine, p_thread);
+
+        // Convert the same affine point back to Jacobian
+        gej p_jac_from_affine;
+        gej_set_ge(p_jac_from_affine, p_affine);
+
+        // Add the converted point to itself using gej_add_ge
+        gej r_add_thread;
+        gej_add_ge(r_add_thread, p_jac_from_affine, p_affine);
+
+        // Double the converted point using gej_double
+        gej r_double_thread;
+        gej_double(r_double_thread, p_jac_from_affine);
+
+        // Write results
+        r_add[0] = r_add_thread;
+        r_double[0] = r_double_thread;
+    }
+}
+
+/*
+ * Kernel to test if memory corruption is happening in the complex kernel.
+ * This kernel does the same operations as test_add_point_to_itself but
+ * preserves the original input point for comparison.
+ */
+kernel void test_memory_corruption_check(
+    device const gej* p [[buffer(0)]],
+    device gej* original_preserved [[buffer(1)]],
+    device gej* original_after_ops [[buffer(2)]],
+    device gej* double_result [[buffer(3)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid == 0) {
+        gej p_thread = p[0];
+
+        // Preserve the original point immediately
+        original_preserved[0] = p_thread;
+
+        // Do the same operations as test_add_point_to_itself
+        ge p_affine;
+        ge_set_gej(p_affine, p_thread);
+
+        gej p_jac_from_affine;
+        gej_set_ge(p_jac_from_affine, p_affine);
+
+        gej r_add_thread;
+        gej_add_ge(r_add_thread, p_jac_from_affine, p_affine);
+
+        // Check if p_thread was corrupted during the operations
+        original_after_ops[0] = p_thread;
+
+        // Now try to double the original point
+        gej r_double_thread;
+        gej_double(r_double_thread, p_thread);
+
+        double_result[0] = r_double_thread;
+    }
+}
+
+/*
+ * Kernel to test adding a point to itself, which should give the same result as doubling.
+ * This version uses a more robust approach with separate copies and conversion cycles.
+ */
+kernel void test_add_point_to_itself(
+    device const gej* p [[buffer(0)]],
+    device gej* debug_states [[buffer(1)]],
+    device gej* r_add [[buffer(2)]],
+    device gej* r_double [[buffer(3)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid == 0) {
+        // Make separate copies for each operation
+        gej p_thread_for_add = p[0];
+        gej p_thread_for_double = p[0];
+
+        // Convert p to affine
+        ge p_affine;
+        ge_set_gej(p_affine, p_thread_for_add);
+
+        // Convert the affine point back to Jacobian
+        gej p_jac_from_affine;
+        gej_set_ge(p_jac_from_affine, p_affine);
+
+        // Add the converted point to itself using gej_add_ge
+        gej r_add_thread;
+        gej_add_ge(r_add_thread, p_jac_from_affine, p_affine);
+
+        // Double p using gej_double with the separate copy
+        gej r_double_thread;
+        gej_double(r_double_thread, p_thread_for_double);
+
+        // Save results
+        r_add[0] = r_add_thread;
+        r_double[0] = r_double_thread;
     }
 }
 
@@ -321,13 +433,13 @@ kernel void test_point_double_and_add(
         gej p_thread = p[0];
         ge q_thread = q[0];
         gej r_thread;
-        
+
         // Double p
         gej_double(r_thread, p_thread);
-        
+
         // Add q to the result
         gej_add_ge(r_thread, r_thread, q_thread);
-        
+
         r[0] = r_thread;
     }
 }
@@ -384,44 +496,12 @@ kernel void test_scalar_mul_step(
 
         // Double p
         gej_double(doubled_p, p_thread);
-        
+
         // Add q
         gej_add_ge(r_thread, doubled_p, q_thread);
-        
+
         // Write back the result
         r[0] = r_thread;
     }
 }
 
-/*
- * Kernel to test edge cases in point addition.
- * This tests adding a point to itself, which should give the same result as doubling.
- */
-kernel void test_add_point_to_itself(
-    device const gej* p [[buffer(0)]],
-    device gej* r_add [[buffer(1)]],
-    device gej* r_double [[buffer(2)]],
-    uint gid [[thread_position_in_grid]])
-{
-    if (gid == 0) {
-        gej p_thread = p[0];
-        ge p_affine;
-        
-        // Convert p to affine
-        ge_set_gej(p_affine, p_thread);
-        
-        // Add p to itself using gej_add_ge
-        gej p_jac_from_affine;
-        gej_set_ge(p_jac_from_affine, p_affine);
-        gej r_add_thread;
-        gej_add_ge(r_add_thread, p_jac_from_affine, p_affine);
-        
-        // Double p using gej_double
-        gej r_double_thread;
-        gej_double(r_double_thread, p_thread);
-        
-        // Write results
-        r_add[0] = r_add_thread;
-        r_double[0] = r_double_thread;
-    }
-}
