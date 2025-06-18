@@ -8,7 +8,8 @@ import time
 from typing import Optional
 
 import config_manager as cm
-from kangaroo_runner import KangarooRunner
+from kangaroo_runner_cpu import KangarooRunnerCPU
+from kangaroo_runner_gpu import KangarooRunnerGPU
 
 # --- Constants ---
 # Assumes the script is run from the root of the repository
@@ -22,7 +23,7 @@ def main():
     Main application entry point.
     - Parses command-line arguments.
     - Loads puzzle and profile configurations.
-    - Initializes and runs the KangarooRunner.
+    - Initializes and runs the KangarooRunnerCPU.
     - Reports progress and prints the final solution.
     """
     parser = argparse.ArgumentParser(description="Bitcoin Puzzle Solver using Pollard's Kangaroo Algorithm.")
@@ -39,8 +40,19 @@ def main():
         return
 
     print("Initializing KangarooRunner...")
-    runner = KangarooRunner(puzzle_def, profile_config)
-    print("Initialization complete. Starting search...")
+    runner_type = profile_config.get('runner_type', 'cpu').lower()
+    
+    try:
+        if runner_type == 'gpu':
+            runner = KangarooRunnerGPU(puzzle_def, profile_config)
+            print("Using GPU runner")
+        else:
+            runner = KangarooRunnerCPU(puzzle_def, profile_config)
+            print("Using CPU runner")
+        print("Initialization complete. Starting search...")
+    except Exception as e:
+        print(f"Error initializing runner: {e}")
+        return
 
     # --- Progress Reporting Setup ---
     last_report_time = time.time()

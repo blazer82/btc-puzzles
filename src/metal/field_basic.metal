@@ -38,8 +38,7 @@ static inline void fe_set_int(thread fe &r, int a) {
 }
 
 /*
- * Limb-wise addition for 256-bit integers (r += a).
- * This is a basic big-integer operation; it does not perform modular reduction.
+ * Add two field elements. Ported from secp256k1_fe_impl_add.
  */
 static inline void fe_add(thread fe &r, const thread fe &a) {
     r.n[0] += a.n[0];
@@ -50,17 +49,15 @@ static inline void fe_add(thread fe &r, const thread fe &a) {
 }
 
 /*
- * Limb-wise subtraction for 256-bit integers (r -= a), with borrow propagation.
- * This is a basic big-integer operation; it does not perform modular reduction.
+ * Subtract field element a from r. Note: this can create negative values
+ * that need normalization.
  */
 static inline void fe_sub(thread fe &r, const thread fe &a) {
-    int128_t t;
-
-    t.lo = r.n[0]; t.hi = 0; i128_sub_u64(t, a.n[0]); r.n[0] = t.lo;
-    t.lo = r.n[1]; t.hi = (long)t.hi >> 63; i128_sub_u64(t, a.n[1]); r.n[1] = t.lo;
-    t.lo = r.n[2]; t.hi = (long)t.hi >> 63; i128_sub_u64(t, a.n[2]); r.n[2] = t.lo;
-    t.lo = r.n[3]; t.hi = (long)t.hi >> 63; i128_sub_u64(t, a.n[3]); r.n[3] = t.lo;
-    t.lo = r.n[4]; t.hi = (long)t.hi >> 63; i128_sub_u64(t, a.n[4]); r.n[4] = t.lo;
+    r.n[0] -= a.n[0];
+    r.n[1] -= a.n[1];
+    r.n[2] -= a.n[2];
+    r.n[3] -= a.n[3];
+    r.n[4] -= a.n[4];
 }
 
 /*
@@ -68,11 +65,13 @@ static inline void fe_sub(thread fe &r, const thread fe &a) {
  * Ported from `secp256k1_fe_mul_inner` in _libsecp256k1/src/field_5x52_int128_impl.h
  */
 static inline void fe_mul(thread fe &r, const thread fe &a_in, const thread fe &b_in) {
+    // Ensure r is not the same as b_in (required by the algorithm)
+    // Note: In Metal we can't enforce this at compile time like in C
     uint128_t c, d;
     ulong t3, t4, tx, u0;
     ulong a0 = a_in.n[0], a1 = a_in.n[1], a2 = a_in.n[2], a3 = a_in.n[3], a4 = a_in.n[4];
     const ulong M = 0xFFFFFFFFFFFFF;
-    const ulong R = 0x1000003D10ULL;
+    const ulong R = 0x1000003D10UL;
 
     u128_mul(d, a0, b_in.n[3]);
     u128_accum_mul(d, a1, b_in.n[2]);
@@ -161,8 +160,8 @@ static inline void fe_sqr(thread fe &r, const thread fe &a_in) {
     uint128_t c, d;
     ulong a0 = a_in.n[0], a1 = a_in.n[1], a2 = a_in.n[2], a3 = a_in.n[3], a4 = a_in.n[4];
     ulong t3, t4, tx, u0;
-    const ulong M = 0xFFFFFFFFFFFFFULL;
-    const ulong R = 0x1000003D10ULL;
+    const ulong M = 0xFFFFFFFFFFFFFUL;
+    const ulong R = 0x1000003D10UL;
 
     u128_mul(d, a0 * 2, a3);
     u128_accum_mul(d, a1 * 2, a2);
@@ -271,3 +270,4 @@ static inline void fe_cmov(thread fe &r, const thread fe &a, bool flag) {
     r.n[3] = select(r.n[3], a.n[3], flag);
     r.n[4] = select(r.n[4], a.n[4], flag);
 }
+
