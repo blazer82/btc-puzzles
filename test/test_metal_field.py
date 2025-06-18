@@ -3,6 +3,13 @@ import numpy as np
 import Metal as metal
 import os
 import re
+import json
+
+@pytest.fixture(scope="session")
+def test_vectors():
+    """Loads the secp256k1 test vectors from the JSON file."""
+    with open("test/secp256k1_test_vectors.json", "r") as f:
+        return json.load(f)
 
 def _resolve_metal_includes(file_path, included_files=None):
     """
@@ -1588,3 +1595,144 @@ class TestFieldArithmetic:
         
         print(f"SUCCESS: Isolated gej_double with secp256k1 generator works correctly")
         print(f"Result coordinates: X={affine_result[0:5]}, Y={affine_result[5:10]}")
+
+    def test_gej_add_ge_with_vectors(self, test_vectors):
+        """
+        Tests gej_add_ge against pre-computed test vectors.
+        """
+        helper = MetalTestHelper("test/metal/test_field.metal")
+        for vector in test_vectors["point_addition"]:
+            p_vector = vector["P"]
+            q_vector = vector["Q"]
+            r_vector = vector["R"]
+
+            # Create P in Jacobian coordinates (z=1)
+            p_jac = np.zeros(16, dtype=np.uint64)
+            p_jac[0:5] = np.array(p_vector["x_limbs"], dtype=np.uint64)
+            p_jac[5:10] = np.array(p_vector["y_limbs"], dtype=np.uint64)
+            p_jac[10:15] = [1, 0, 0, 0, 0]  # z = 1
+            p_jac[15] = 0  # not infinity
+
+            # Create Q in affine coordinates
+            q_aff = np.zeros(11, dtype=np.uint64)
+            q_aff[0:5] = np.array(q_vector["x_limbs"], dtype=np.uint64)
+            q_aff[5:10] = np.array(q_vector["y_limbs"], dtype=np.uint64)
+            q_aff[10] = 0  # not infinity
+
+            # Calculate P + Q on the GPU
+            sum_result_jac = helper.run_kernel("test_gej_add_ge", [p_jac, q_aff], 16 * 8)
+
+            # Convert result to affine for comparison
+            sum_result_aff = helper.run_kernel("test_ge_set_gej", [sum_result_jac], 11 * 8)
+
+            # Expected result R
+            expected_r_x = np.array(r_vector["x_limbs"], dtype=np.uint64)
+            expected_r_y = np.array(r_vector["y_limbs"], dtype=np.uint64)
+
+            # Compare
+            assert sum_result_aff[10] == 0, "Result should not be infinity"
+            assert np.array_equal(sum_result_aff[0:5], expected_r_x), f"Point addition failed for P.x={p_vector['x']}, Q.x={q_vector['x']}: X coordinate mismatch"
+            assert np.array_equal(sum_result_aff[5:10], expected_r_y), f"Point addition failed for P.x={p_vector['x']}, Q.x={q_vector['x']}: Y coordinate mismatch"
+
+    def test_gej_double_with_vectors(self, test_vectors):
+        """
+        Tests gej_double against pre-computed test vectors.
+        """
+        helper = MetalTestHelper("test/metal/test_field.metal")
+        for vector in test_vectors["point_doubling"]:
+            p_vector = vector["P"]
+            r_vector = vector["R"]
+
+            # Create P in Jacobian coordinates (z=1)
+            p_jac = np.zeros(16, dtype=np.uint64)
+            p_jac[0:5] = np.array(p_vector["x_limbs"], dtype=np.uint64)
+            p_jac[5:10] = np.array(p_vector["y_limbs"], dtype=np.uint64)
+            p_jac[10:15] = [1, 0, 0, 0, 0]  # z = 1
+            p_jac[15] = 0  # not infinity
+
+            # Calculate 2*P on the GPU
+            double_result_jac = helper.run_kernel("test_gej_double", [p_jac], 16 * 8)
+
+            # Convert result to affine for comparison
+            double_result_aff = helper.run_kernel("test_ge_set_gej", [double_result_jac], 11 * 8)
+
+            # Expected result R
+            expected_r_x = np.array(r_vector["x_limbs"], dtype=np.uint64)
+            expected_r_y = np.array(r_vector["y_limbs"], dtype=np.uint64)
+
+            # Compare
+            assert double_result_aff[10] == 0, "Result should not be infinity"
+            assert np.array_equal(double_result_aff[0:5], expected_r_x), f"Point doubling failed for P.x={p_vector['x']}: X coordinate mismatch"
+            assert np.array_equal(double_result_aff[5:10], expected_r_y), f"Point doubling failed for P.x={p_vector['x']}: Y coordinate mismatch"
+
+    def test_ge_set_gej_with_z_ne_1_vector(self, test_vectors):
+        """
+        Tests ge_set_gej with a Jacobian point where Z is not 1, using a pre-computed vector.
+        """
+        helper = MetalTestHelper("test/metal/test_field.metal")
+        vector = test_vectors["jacobian_conversion"]
+        
+        jac_point = vector["jacobian"]
+        aff_point = vector["affine"]
+
+        # Create Jacobian point with Z from vector
+        p_jac = np.zeros(16, dtype=np.uint64)
+        p_jac[0:5] = np.array(jac_point["x_limbs"], dtype=np.uint64)
+        p_jac[5:10] = np.array(jac_point["y_limbs"], dtype=np.uint64)
+        p_jac[10:15] = np.array(jac_point["z_limbs"], dtype=np.uint64)
+        p_jac[15] = 0  # not infinity
+
+        # Convert to affine on the GPU
+        result_aff = helper.run_kernel("test_ge_set_gej", [p_jac], 11 * 8)
+
+        # Expected result
+        expected_x = np.array(aff_point["x_limbs"], dtype=np.uint64)
+        expected_y = np.array(aff_point["y_limbs"], dtype=np.uint64)
+
+        # Compare
+        assert result_aff[10] == 0, "Result should not be infinity"
+        assert np.array_equal(result_aff[0:5], expected_x), "Jacobian to Affine conversion failed: X coordinate mismatch"
+        assert np.array_equal(result_aff[5:10], expected_y), "Jacobian to Affine conversion failed: Y coordinate mismatch"
+
+    def test_scalar_multiplication_with_vectors(self, test_vectors):
+        """
+        Tests a simple double-and-add scalar multiplication loop using Metal kernels,
+        verified against pre-computed test vectors.
+        """
+        helper = MetalTestHelper("test/metal/test_field.metal")
+        
+        for vector in test_vectors["scalar_multiplication"]:
+            p_vector = vector["P"]
+            k = vector["k"]
+            r_vector = vector["R"]
+
+            # Create P in affine coordinates for adding
+            p_aff = np.zeros(11, dtype=np.uint64)
+            p_aff[0:5] = np.array(p_vector["x_limbs"], dtype=np.uint64)
+            p_aff[5:10] = np.array(p_vector["y_limbs"], dtype=np.uint64)
+            p_aff[10] = 0  # not infinity
+
+            # Initialize accumulator (R) to point at infinity
+            r_jac = np.zeros(16, dtype=np.uint64)
+            r_jac[15] = 1 # infinity
+
+            # Loop from MSB to LSB of k
+            for i in range(k.bit_length() - 1, -1, -1):
+                # Double R
+                r_jac = helper.run_kernel("test_gej_double", [r_jac], 16 * 8)
+                
+                if (k >> i) & 1:
+                    # Add P to R
+                    r_jac = helper.run_kernel("test_gej_add_ge", [r_jac, p_aff], 16 * 8)
+
+            # Convert final result to affine for comparison
+            result_aff = helper.run_kernel("test_ge_set_gej", [r_jac], 11 * 8)
+
+            # Expected result R
+            expected_r_x = np.array(r_vector["x_limbs"], dtype=np.uint64)
+            expected_r_y = np.array(r_vector["y_limbs"], dtype=np.uint64)
+
+            # Compare
+            assert result_aff[10] == 0, "Result should not be infinity"
+            assert np.array_equal(result_aff[0:5], expected_r_x), f"Scalar multiplication failed for k={k}, P.x={p_vector['x']}: X coordinate mismatch"
+            assert np.array_equal(result_aff[5:10], expected_r_y), f"Scalar multiplication failed for k={k}, P.x={p_vector['x']}: Y coordinate mismatch"
