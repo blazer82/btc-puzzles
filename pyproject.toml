@@ -11,8 +11,3 @@ requires-python = ">=3.8"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.pytest.ini_options]
-markers = [
-    "gpu: marks tests as requiring a GPU to run",
-]

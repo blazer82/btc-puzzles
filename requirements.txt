@@ -1,0 +1,9 @@
+# Core dependencies
+numpy>=2.3.0
+coincurve>=21.0.0
+
+# For Metal GPU support (Apple Silicon only)
+pyobjc-framework-Metal>=11.1.0
+
+# Testing dependencies
+pytest>=8.4.0

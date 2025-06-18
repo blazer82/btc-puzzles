@@ -1,5 +1,18 @@
 # Bitcoin Puzzle Solver using Pollard's Kangaroo Algorithm
 
+## Quick Start
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run a simple test with CPU implementation
+python src/main.py --puzzle 5 --profile verify_cpu
+
+# Run with GPU implementation (Apple Silicon only)
+python src/main.py --puzzle 5 --profile verify_gpu
+```
+
 ## 1. Objective
 
 The primary goal of this project is to find a specific Bitcoin private key that corresponds to a given public key. The search is confined to a predefined range of possible keys, as specified by the "Bitcoin Puzzle" challenges. Each puzzle number `n` defines a search space, typically from `2^(n-1)` to `2^n - 1`.
@@ -49,16 +62,45 @@ The runtime of Pollard's Kangaroo Algorithm is proportional to the square root o
 
 - **High-Difficulty Puzzles (e.g., #65+)**: These represent a significant computational challenge. Solving them requires a highly optimized implementation and can take days, weeks, or longer, depending on the hardware available.
 
-## 4. Target Platform: Apple Silicon
+## 4. Implementation Options
 
-This project is exclusively designed and optimized for Apple Silicon (M-series chips). It heavily relies on the unique features of this platform to achieve high performance:
+This project provides two implementation options to accommodate different hardware capabilities:
 
--   **GPU Acceleration**: All cryptographic computations are offloaded to the GPU using PyTorch with the Metal Performance Shaders (MPS) backend.
--   **Unified Memory**: The algorithm takes advantage of Apple's unified memory architecture to eliminate costly data transfers between the CPU and GPU, which is critical for an iterative, high-throughput algorithm like Pollard's Kangaroo.
+### CPU Implementation
 
-Due to these specific optimizations, this solver is not intended to be portable to other architectures (e.g., NVIDIA or AMD GPUs) without significant modification.
+The CPU implementation (`KangarooRunnerCPU`) is suitable for:
+- Systems without a compatible GPU
+- Solving smaller puzzles (up to around #30-40)
+- Testing and development
+
+### GPU Implementation for Apple Silicon
+
+The GPU implementation (`KangarooRunnerGPU`) is optimized specifically for Apple Silicon (M-series chips) and offers significantly higher performance:
+
+- **Direct Metal API**: The implementation uses Apple's Metal API directly for maximum performance, with custom Metal kernels for all elliptic curve operations.
+- **Unified Memory**: The algorithm takes advantage of Apple's unified memory architecture to minimize data transfers between the CPU and GPU.
+
+Due to these specific optimizations, the GPU solver is not portable to other architectures (e.g., NVIDIA or AMD GPUs) without significant modification.
 
 ## 5. How to Use
+
+### Installation
+
+#### Prerequisites
+- Python 3.8 or higher
+- For GPU support: Apple Silicon Mac (M1/M2/M3 series)
+
+#### Setup
+1. Clone this repository:
+   ```bash
+   git clone https://github.com/yourusername/bitcoin-puzzle-solver.git
+   cd bitcoin-puzzle-solver
+   ```
+
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
 ### Configuration
 
@@ -66,8 +108,9 @@ The solver is configured through two types of files:
 
 -   **`puzzles.json`**: This file contains the definitions for the Bitcoin puzzles. Each puzzle entry includes its number, the target public key, and the key search range. You can add more puzzles to this file as needed.
 -   **`profiles/`**: This directory contains `.ini` files that define solver profiles. Each profile specifies parameters like `num_walkers` (the number of kangaroos), `distinguished_point_threshold`, and `start_point_strategy`. The `start_point_strategy` can be `midpoint` (default, deterministic) or `random` (useful for running multiple independent solver instances).
-    -   `verify.ini`: A profile for quick checks on easy puzzles.
-    -   `solve.ini`: A profile for serious attempts on hard puzzles.
+    -   `verify_cpu.ini`: A profile for quick checks on easy puzzles using the CPU.
+    -   `verify_gpu.ini`: A profile for quick checks on easy puzzles using the GPU.
+    -   `solve_gpu.ini`: A profile for serious attempts on hard puzzles using the GPU.
 
 ### Running the Solver
 
@@ -79,12 +122,18 @@ To run the solver, execute the `src/main.py` script from the command line, speci
 python src/main.py --puzzle <number> --profile <name>
 ```
 
-**Example:**
+**Examples:**
 
-To solve puzzle #5 using the `verify` profile, run:
+To solve puzzle #5 using the CPU implementation:
 
 ```bash
-python src/main.py --puzzle 5 --profile verify
+python src/main.py --puzzle 5 --profile verify_cpu
+```
+
+To solve a harder puzzle using the GPU implementation:
+
+```bash
+python src/main.py --puzzle 30 --profile solve_gpu
 ```
 
 The solver will then initialize and start searching for the private key, printing progress updates to the console.
