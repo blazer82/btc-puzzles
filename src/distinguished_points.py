@@ -2,6 +2,7 @@
 Implements the criteria for identifying "distinguished points" and manages
 the storage (PointTrap) for these points.
 """
+from collections import OrderedDict
 from typing import Dict, Optional, Tuple
 
 # Type alias for clarity
@@ -37,23 +38,42 @@ class PointTrap:
     """
     A storage mechanism for distinguished points and their associated distances.
 
-    Uses a dictionary for efficient O(1) average time lookups.
+    Uses an OrderedDict for efficient O(1) average time lookups while maintaining
+    insertion order for memory-bounded operation.
     """
 
-    def __init__(self):
-        """Initializes an empty PointTrap."""
-        self._trap: Dict[PointXY, int] = {}
+    def __init__(self, max_size: int = None):
+        """
+        Initializes an empty PointTrap.
+        
+        Args:
+            max_size (int, optional): Maximum number of points to store.
+                                     If None, size is unbounded.
+        """
+        self._trap: OrderedDict[PointXY, int] = OrderedDict()
+        self.max_size = max_size
 
     def add_point(self, point_xy_tuple: PointXY, distance: int):
         """
         Adds or updates a distinguished point in the trap.
 
         If the point already exists, its distance is updated with the new value.
+        If max_size is set and reached, the oldest point is removed.
 
         Args:
             point_xy_tuple (Tuple[int, int]): The (x, y) coordinates of the point.
             distance (int): The accumulated distance to reach this point.
         """
+        # If the point already exists, just update it (and move to end)
+        if point_xy_tuple in self._trap:
+            self._trap.pop(point_xy_tuple)
+            self._trap[point_xy_tuple] = distance
+            return
+            
+        # If we're at max capacity, remove the oldest entry (first in OrderedDict)
+        if self.max_size is not None and len(self._trap) >= self.max_size:
+            self._trap.popitem(last=False)  # Remove oldest item (first inserted)
+            
         self._trap[point_xy_tuple] = distance
 
     def get_point(self, point_xy_tuple: PointXY) -> Optional[int]:
@@ -68,3 +88,12 @@ class PointTrap:
                            otherwise None.
         """
         return self._trap.get(point_xy_tuple)
+        
+    def size(self) -> int:
+        """
+        Returns the current number of points in the trap.
+        
+        Returns:
+            int: Number of stored points.
+        """
+        return len(self._trap)

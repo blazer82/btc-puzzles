@@ -43,9 +43,10 @@ class KangarooRunnerCPU:
         # Pre-compute hops
         self.precomputed_hops = hs.generate_precomputed_hops()
 
-        # Initialize traps
-        self.tame_trap = dp.PointTrap()
-        self.wild_trap = dp.PointTrap()
+        # Initialize traps with memory bounds if specified
+        max_trap_size = int(self.profile_config.get('max_trap_size', '0')) or None
+        self.tame_trap = dp.PointTrap(max_size=max_trap_size)
+        self.wild_trap = dp.PointTrap(max_size=max_trap_size)
 
         # Setup tame herd
         range_start = int(self.puzzle_def['range_start'], 16)
@@ -150,3 +151,12 @@ class KangarooRunnerCPU:
             int: The total number of hops.
         """
         return self.total_hops_performed
+        
+    def get_trap_sizes(self) -> tuple:
+        """
+        Returns the current sizes of the tame and wild traps.
+        
+        Returns:
+            tuple: (tame_trap_size, wild_trap_size)
+        """
+        return (self.tame_trap.size(), self.wild_trap.size())

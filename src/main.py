@@ -91,10 +91,16 @@ def main():
                 else:
                     time_remaining_str = "Approaching..."
 
+            # Get trap sizes if the runner supports it
+            trap_info = ""
+            if hasattr(runner, 'get_trap_sizes'):
+                tame_size, wild_size = runner.get_trap_sizes()
+                trap_info = f" | DPs: {tame_size:,}/{wild_size:,}"
+
             total_runtime = current_time - start_time
             print(
                 f"Runtime: {total_runtime:.2f}s | "
-                f"Hops: {total_hops_done:,} ({hps:,.0f} H/s) | "
+                f"Hops: {total_hops_done:,} ({hps:,.0f} H/s){trap_info} | "
                 f"ETA: {time_remaining_str}"
             )
 

@@ -69,6 +69,8 @@ class TestMain:
         mock_runner_instance.step.side_effect = [None, None, solution_key]
         # Calls: 1. init (0), 2. progress report (200), 3. final report (300)
         mock_runner_instance.get_total_hops_performed.side_effect = [0, 200, 300]
+        # Add trap sizes for the new functionality
+        mock_runner_instance.get_trap_sizes.return_value = (10, 15)
         mock_kangaroo_runner_cpu.return_value = mock_runner_instance
 
         # 4. Time
@@ -146,6 +148,8 @@ class TestMain:
         solution_key = 12345
         mock_runner_instance.step.side_effect = [None, solution_key]
         mock_runner_instance.get_total_hops_performed.side_effect = [0, 500, 500]
+        # Add trap sizes for the new functionality
+        mock_runner_instance.get_trap_sizes.return_value = (20, 25)
         mock_kangaroo_runner_gpu.return_value = mock_runner_instance
 
         # 4. Time

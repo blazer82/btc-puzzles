@@ -80,3 +80,35 @@ class TestPointTrap:
         # Add it again with a new distance
         trap.add_point(point, updated_distance)
         assert trap.get_point(point) == updated_distance
+        
+    def test_memory_bounded_trap(self):
+        """Tests that a memory-bounded trap removes oldest points when full."""
+        max_size = 3
+        trap = dp.PointTrap(max_size=max_size)
+        
+        # Add points up to capacity
+        trap.add_point((1, 1), 100)
+        trap.add_point((2, 2), 200)
+        trap.add_point((3, 3), 300)
+        
+        assert trap.size() == max_size
+        assert trap.get_point((1, 1)) == 100
+        assert trap.get_point((2, 2)) == 200
+        assert trap.get_point((3, 3)) == 300
+        
+        # Add one more point - should evict the oldest (1,1)
+        trap.add_point((4, 4), 400)
+        
+        assert trap.size() == max_size
+        assert trap.get_point((1, 1)) is None  # Oldest point removed
+        assert trap.get_point((2, 2)) == 200
+        assert trap.get_point((3, 3)) == 300
+        assert trap.get_point((4, 4)) == 400
+        
+        # Update an existing point - should not evict anything
+        trap.add_point((3, 3), 350)
+        
+        assert trap.size() == max_size
+        assert trap.get_point((2, 2)) == 200
+        assert trap.get_point((3, 3)) == 350
+        assert trap.get_point((4, 4)) == 400

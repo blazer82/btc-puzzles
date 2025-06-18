@@ -58,9 +58,10 @@ class KangarooRunnerGPU:
         self.num_hops_np = np.array(
             [len(precomputed_hops_list)], dtype=np.uint32)
 
-        # Initialize traps
-        self.tame_trap = dp.PointTrap()
-        self.wild_trap = dp.PointTrap()
+        # Initialize traps with memory bounds if specified
+        max_trap_size = int(self.profile_config.get('max_trap_size', '0')) or None
+        self.tame_trap = dp.PointTrap(max_size=max_trap_size)
+        self.wild_trap = dp.PointTrap(max_size=max_trap_size)
 
         # Setup tame herd
         range_start = int(self.puzzle_def['range_start'], 16)
@@ -167,6 +168,10 @@ class KangarooRunnerGPU:
         # 3. Collect new distinguished points
         new_distinguished_tame = []
         for i in range(num_walkers):
+            # Skip infinity points
+            if tame_affine_np[i][10] == 1:  # infinity flag
+                continue
+                
             x_coord = mu.ge_struct_to_x_coord(tame_affine_np[i])
             if dp.is_distinguished(x_coord, self.dp_threshold):
                 point_xy = mu.ge_struct_to_point(tame_affine_np[i])
@@ -175,6 +180,10 @@ class KangarooRunnerGPU:
 
         new_distinguished_wild = []
         for i in range(num_walkers):
+            # Skip infinity points
+            if wild_affine_np[i][10] == 1:  # infinity flag
+                continue
+                
             x_coord = mu.ge_struct_to_x_coord(wild_affine_np[i])
             if dp.is_distinguished(x_coord, self.dp_threshold):
                 point_xy = mu.ge_struct_to_point(wild_affine_np[i])
@@ -216,3 +225,12 @@ class KangarooRunnerGPU:
             int: The total number of hops.
         """
         return self.total_hops_performed
+        
+    def get_trap_sizes(self) -> tuple:
+        """
+        Returns the current sizes of the tame and wild traps.
+        
+        Returns:
+            tuple: (tame_trap_size, wild_trap_size)
+        """
+        return (self.tame_trap.size(), self.wild_trap.size())
