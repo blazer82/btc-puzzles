@@ -464,11 +464,6 @@ class TestFieldArithmetic:
         # Run the doubling operation
         gpu_result_buffer = helper.run_kernel("test_gej_double", [test_gej_buffer], 16 * 8)
         
-        # Debug: Check if result is infinity
-        if gpu_result_buffer[15] == 1:
-            print(f"ERROR: gej_double produced infinity for generator point: {gpu_result_buffer}")
-            pytest.fail("gej_double should not produce infinity for the secp256k1 generator point")
-        
         # The result should not be at infinity for a valid point
         assert gpu_result_buffer[15] == 0, "gej_double should not produce infinity for valid secp256k1 points"
         
@@ -1057,16 +1052,6 @@ class TestFieldArithmetic:
         gpu_affine = helper.run_kernel("test_ge_set_gej", [gpu_result_np], 11 * 8)
         reference_affine = helper.run_kernel("test_ge_set_gej", [reference_result], 11 * 8)
         
-        # Debug: Check if either result is infinity
-        if gpu_result_np[15] == 1:
-            print(f"GPU result is infinity")
-        if reference_result[15] == 1:
-            print(f"Reference result is infinity")
-        if gpu_affine[10] == 1:
-            print(f"GPU affine result is infinity")
-        if reference_affine[10] == 1:
-            print(f"Reference affine result is infinity")
-            
         # Results should be identical
         assert np.array_equal(gpu_affine[0:5], reference_affine[0:5]), f"X coords differ: GPU={gpu_affine[0:5]}, Ref={reference_affine[0:5]}"
         assert np.array_equal(gpu_affine[5:10], reference_affine[5:10]), f"Y coords differ: GPU={gpu_affine[5:10]}, Ref={reference_affine[5:10]}"
@@ -1446,14 +1431,6 @@ class TestFieldArithmetic:
         y_new_is_zero = all(y == 0 for y in y_new)
         z_new_is_zero = all(z == 0 for z in z_new)
         
-        print(f"Step-by-step doubling results:")
-        print(f"X_new is zero: {x_new_is_zero}")
-        print(f"Y_new is zero: {y_new_is_zero}")
-        print(f"Z_new is zero: {z_new_is_zero}")
-        print(f"X_new: {x_new}")
-        print(f"Y_new: {y_new}")
-        print(f"Z_new: {z_new}")
-        
         # None of the coordinates should be zero for a valid doubling
         assert not (x_new_is_zero and y_new_is_zero and z_new_is_zero), "Doubled point should not be zero"
         assert not z_new_is_zero, "Z coordinate should not be zero after doubling"
@@ -1499,40 +1476,15 @@ class TestFieldArithmetic:
         # Convert back to Jacobian
         converted_jac = helper.run_kernel("test_gej_set_ge", [affine_point], 16 * 8)
         
-        # Compare original and converted Jacobian coordinates
-        print(f"Original Jacobian coordinates:")
-        print(f"  X: {original_jac[0:5]}")
-        print(f"  Y: {original_jac[5:10]}")
-        print(f"  Z: {original_jac[10:15]}")
-        print(f"  Infinity: {original_jac[15]}")
-        
-        print(f"Converted Jacobian coordinates:")
-        print(f"  X: {converted_jac[0:5]}")
-        print(f"  Y: {converted_jac[5:10]}")
-        print(f"  Z: {converted_jac[10:15]}")
-        print(f"  Infinity: {converted_jac[15]}")
-        
         # Test doubling both versions
         original_doubled = helper.run_kernel("test_gej_double", [original_jac], 16 * 8)
         converted_doubled = helper.run_kernel("test_gej_double", [converted_jac], 16 * 8)
         
-        print(f"Original doubled result infinity flag: {original_doubled[15]}")
-        print(f"Converted doubled result infinity flag: {converted_doubled[15]}")
-        
-        # If the conversion cycle introduces errors, the doubling results will differ
-        if original_doubled[15] != converted_doubled[15]:
-            print("ERROR: Conversion cycle affects doubling behavior!")
-            print(f"Original point doubling produces infinity: {original_doubled[15] == 1}")
-            print(f"Converted point doubling produces infinity: {converted_doubled[15] == 1}")
-            
         # The coordinates should be identical after conversion cycle (since z=1)
         coords_match = (np.array_equal(original_jac[0:5], converted_jac[0:5]) and 
                        np.array_equal(original_jac[5:10], converted_jac[5:10]) and
                        np.array_equal(original_jac[10:15], converted_jac[10:15]))
         
-        if not coords_match:
-            print("WARNING: Coordinate conversion cycle does not preserve exact values!")
-            
         # Both doubling operations should produce the same result
         assert original_doubled[15] == converted_doubled[15], "Conversion cycle should not affect doubling behavior"
 
@@ -1574,13 +1526,6 @@ class TestFieldArithmetic:
         # Call gej_double directly with no other operations in the kernel
         double_result = helper.run_kernel("test_gej_double", [p_jac], 16 * 8)
         
-        # This should NOT produce infinity
-        if double_result[15] == 1:
-            print(f"ERROR: Isolated gej_double with secp256k1 generator produced infinity!")
-            print(f"Input point: {p_jac}")
-            print(f"Output point: {double_result}")
-            pytest.fail("gej_double should not produce infinity for secp256k1 generator in isolation")
-        
         # Verify the result is valid
         assert double_result[15] == 0, "Isolated gej_double should not produce infinity"
         
@@ -1593,8 +1538,6 @@ class TestFieldArithmetic:
         y_is_zero = all(y == 0 for y in affine_result[5:10])
         assert not (x_is_zero and y_is_zero), "Doubled generator should not be zero point"
         
-        print(f"SUCCESS: Isolated gej_double with secp256k1 generator works correctly")
-        print(f"Result coordinates: X={affine_result[0:5]}, Y={affine_result[5:10]}")
 
     def test_gej_add_ge_with_vectors(self, test_vectors):
         """

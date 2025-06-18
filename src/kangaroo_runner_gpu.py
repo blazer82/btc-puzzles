@@ -39,20 +39,24 @@ class KangarooRunnerGPU:
         # Load configurations
         self.puzzle_def = puzzle_def
         self.profile_config = profile_config
-        self.dp_threshold = int(self.profile_config['distinguished_point_threshold'])
+        self.dp_threshold = int(
+            self.profile_config['distinguished_point_threshold'])
         num_walkers = int(self.profile_config['num_walkers'])
-        start_point_strategy = self.profile_config.get('start_point_strategy', 'midpoint')
+        start_point_strategy = self.profile_config.get(
+            'start_point_strategy', 'midpoint')
 
         # Initialize Metal runner and compile kernels
         self.metal_runner = MetalRunner()
-        self.metal_runner.compile_library("kangaroo_kernels", "src/metal/kangaroo_kernels.metal")
+        self.metal_runner.compile_library(
+            "kangaroo_kernels", "src/metal/kangaroo_kernels.metal")
 
         # Pre-compute hops and convert to numpy format for the GPU
         precomputed_hops_list = hs.generate_precomputed_hops()
         self.precomputed_hops_np = np.array(
             [mu.point_to_ge_struct(p) for p in precomputed_hops_list], dtype=np.uint64
         )
-        self.num_hops_np = np.array([len(precomputed_hops_list)], dtype=np.uint32)
+        self.num_hops_np = np.array(
+            [len(precomputed_hops_list)], dtype=np.uint32)
 
         # Initialize traps
         self.tame_trap = dp.PointTrap()
@@ -67,7 +71,8 @@ class KangarooRunnerGPU:
         elif start_point_strategy == 'random':
             self.start_key_tame = random.randint(range_start, range_end)
         else:
-            raise ValueError(f"Unknown start_point_strategy: {start_point_strategy}")
+            raise ValueError(
+                f"Unknown start_point_strategy: {start_point_strategy}")
 
         start_point_tame = crypto.scalar_multiply(self.start_key_tame)
 
@@ -96,7 +101,7 @@ class KangarooRunnerGPU:
         # This is done by hopping kangaroos [i..N] once, for i from 1 to N-1.
         for i in range(1, num_walkers):
             num_to_hop = num_walkers - i
-            
+
             # Hop relevant slice of tame kangaroos
             self.metal_runner.run_kernel(
                 "kangaroo_kernels", "batch_hop_kangaroos", num_to_hop,
@@ -111,7 +116,7 @@ class KangarooRunnerGPU:
             )
             self.total_hops_performed += 2 * num_to_hop
 
-    def step(self, debug: bool = False) -> Optional[int]:
+    def step(self) -> Optional[int]:
         """
         Executes one parallel hop for all kangaroos on the GPU.
 
@@ -183,16 +188,12 @@ class KangarooRunnerGPU:
         for point_xy, dist_tame in new_distinguished_tame:
             dist_wild = self.wild_trap.get_point(point_xy)
             if dist_wild is not None:
-                if debug:
-                    print(f"  [DEBUG] TAME kangaroo collided with wild trap at point {point_xy}")
                 # Collision found: new tame point is in old wild trap
                 return (self.start_key_tame + dist_tame - dist_wild) % curve_n
 
         for point_xy, dist_wild in new_distinguished_wild:
             dist_tame = self.tame_trap.get_point(point_xy)
             if dist_tame is not None:
-                if debug:
-                    print(f"  [DEBUG] WILD kangaroo collided with tame trap at point {point_xy}")
                 # Collision found: new wild point is in old tame trap
                 return (self.start_key_tame + dist_tame - dist_wild) % curve_n
 

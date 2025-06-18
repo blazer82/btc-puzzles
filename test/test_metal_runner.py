@@ -77,12 +77,3 @@ class TestMetalRunner:
         )
         expected_affine_struct = mu.point_to_ge_struct(expected_next_point)
         assert np.array_equal(gpu_affine_struct, expected_affine_struct)
-
-        # 5. Verify results
-        assert distances_np[0] == expected_hop_distance
-        gpu_gej_result = kangaroos_np[0]
-        gpu_affine_struct = metal_field_tester.run_kernel(
-            "test_ge_set_gej", [gpu_gej_result], 11 * 8
-        )
-        expected_affine_struct = mu.point_to_ge_struct(expected_next_point)
-        assert np.array_equal(gpu_affine_struct, expected_affine_struct)

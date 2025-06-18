@@ -13,7 +13,8 @@ def simple_puzzle():
     starts nearby.
     """
     target_privkey = 3
-    pubkey_hex = crypto.scalar_multiply(target_privkey).format(compressed=True).hex()
+    pubkey_hex = crypto.scalar_multiply(
+        target_privkey).format(compressed=True).hex()
     return {
         "puzzle_number": 3,
         "public_key": pubkey_hex,
@@ -74,8 +75,10 @@ class TestKangarooRunner:
         assert runner.wild_distances_np[1] > 0
 
         # Check that the points for walker 1 are different from walker 0
-        assert not np.array_equal(runner.tame_kangaroos_np[0], runner.tame_kangaroos_np[1])
-        assert not np.array_equal(runner.wild_kangaroos_np[0], runner.wild_kangaroos_np[1])
+        assert not np.array_equal(
+            runner.tame_kangaroos_np[0], runner.tame_kangaroos_np[1])
+        assert not np.array_equal(
+            runner.wild_kangaroos_np[0], runner.wild_kangaroos_np[1])
 
         # Check total hops after warm-up
         expected_hops = 2 * sum(range(num_walkers))
@@ -100,7 +103,7 @@ class TestKangarooRunner:
                 break
 
         assert solution is not None, "Solver failed to find a solution within max_steps"
-        
+
         # The private key for the puzzle is 3
         expected_solution = 3
         assert solution == expected_solution
@@ -119,7 +122,7 @@ class TestKangarooRunner:
         # With a low DP threshold, this should be found very quickly.
         max_steps = 10000
         for i in range(max_steps):
-            solution = runner.step(debug=True)
+            solution = runner.step()
             if solution is not None:
                 break
 
