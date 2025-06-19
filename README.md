@@ -26,14 +26,16 @@ Instead of a computationally expensive brute-force search, this project employs 
 The algorithm's runtime is proportional to the square root of the size of the search range, making it vastly more efficient than checking every key one by one. It operates on the following principles:
 
 1.  **Two Herds of "Kangaroos"**: The algorithm simulates two independent sets of "walkers" or "kangaroos" that hop across points on the secp256k1 elliptic curve.
-    *   **Tame Kangaroos**: This herd begins at a known starting point within the search range (e.g., the middle of the puzzle's key space). We know the "private key" for their starting point.
-    *   **Wild Kangaroos**: This herd begins at the target public key for which we want to find the private key.
+
+    - **Tame Kangaroos**: This herd begins at a known starting point within the search range (e.g., the middle of the puzzle's key space). We know the "private key" for their starting point.
+    - **Wild Kangaroos**: This herd begins at the target public key for which we want to find the private key.
 
 2.  **Deterministic Hops**: Each kangaroo takes "hops" from one point on the curve to another. The direction and distance of each hop are determined by the kangaroo's current position, making their paths deterministic but seemingly random. The distance of each hop is a known power-of-2 multiple of the generator point `G`.
 
 3.  **Tracking Distance**: As each kangaroo hops, it accumulates a total distance traveled.
-    *   For a tame kangaroo, this distance represents an offset from its known starting private key.
-    *   For a wild kangaroo, this distance represents an offset from the *unknown* target private key.
+
+    - For a tame kangaroo, this distance represents an offset from its known starting private key.
+    - For a wild kangaroo, this distance represents an offset from the _unknown_ target private key.
 
 4.  **Collision and Solution**: The algorithm runs until a tame kangaroo and a wild kangaroo land on the exact same point on the elliptic curve. This event is called a **collision**. Because the paths are deterministic, this collision is bound to happen.
 
@@ -46,9 +48,9 @@ The algorithm's runtime is proportional to the square root of the size of the se
 
 To make the collision detection process efficient, the algorithm does not check for collisions after every single hop. Instead, it uses a technique called **distinguished points**.
 
-*   A point is "distinguished" if it meets a predefined, rare criterion (e.g., its x-coordinate has a certain number of trailing zero bits).
-*   Kangaroos only report their location and total distance traveled when they land on one of these distinguished points.
-*   These reported locations are stored in a "trap". When a new distinguished point is reported, the trap is checked for a matching point from the opposite herd. This is how collisions are detected without the overhead of constant checking.
+- A point is "distinguished" if it meets a predefined, rare criterion (e.g., its x-coordinate has a certain number of trailing zero bits).
+- Kangaroos only report their location and total distance traveled when they land on one of these distinguished points.
+- These reported locations are stored in a "trap". When a new distinguished point is reported, the trap is checked for a matching point from the opposite herd. This is how collisions are detected without the overhead of constant checking.
 
 ## 3. Expected Performance
 
@@ -69,6 +71,7 @@ This project provides two implementation options to accommodate different hardwa
 ### CPU Implementation
 
 The CPU implementation (`KangarooRunnerCPU`) is suitable for:
+
 - Systems without a compatible GPU
 - Solving smaller puzzles (up to around #30-40)
 - Testing and development
@@ -87,13 +90,16 @@ Due to these specific optimizations, the GPU solver is not portable to other arc
 ### Installation
 
 #### Prerequisites
+
 - Python 3.8 or higher
 - For GPU support: Apple Silicon Mac (M1/M2/M3 series)
 
 #### Setup
+
 1. Clone this repository:
+
    ```bash
-   git clone https://github.com/yourusername/bitcoin-puzzle-solver.git
+   git clone https://github.com/blazer82/btc-puzzles.git
    cd bitcoin-puzzle-solver
    ```
 
@@ -106,11 +112,11 @@ Due to these specific optimizations, the GPU solver is not portable to other arc
 
 The solver is configured through two types of files:
 
--   **`puzzles.json`**: This file contains the definitions for the Bitcoin puzzles. Each puzzle entry includes its number, the target public key, and the key search range. You can add more puzzles to this file as needed.
--   **`profiles/`**: This directory contains `.ini` files that define solver profiles. Each profile specifies parameters like `num_walkers` (the number of kangaroos), `distinguished_point_threshold`, and `start_point_strategy`. The `start_point_strategy` can be `midpoint` (default, deterministic) or `random` (useful for running multiple independent solver instances).
-    -   `verify_cpu.ini`: A profile for quick checks on easy puzzles using the CPU.
-    -   `verify_gpu.ini`: A profile for quick checks on easy puzzles using the GPU.
-    -   `solve_gpu.ini`: A profile for serious attempts on hard puzzles using the GPU.
+- **`puzzles.json`**: This file contains the definitions for the Bitcoin puzzles. Each puzzle entry includes its number, the target public key, and the key search range. You can add more puzzles to this file as needed.
+- **`profiles/`**: This directory contains `.ini` files that define solver profiles. Each profile specifies parameters like `num_walkers` (the number of kangaroos), `distinguished_point_threshold`, and `start_point_strategy`. The `start_point_strategy` can be `midpoint` (default, deterministic) or `random` (useful for running multiple independent solver instances).
+  - `verify_cpu.ini`: A profile for quick checks on easy puzzles using the CPU.
+  - `verify_gpu.ini`: A profile for quick checks on easy puzzles using the GPU.
+  - `solve_gpu.ini`: A profile for serious attempts on hard puzzles using the GPU.
 
 ### Running the Solver
 
