@@ -36,8 +36,10 @@ def _resolve_metal_includes(file_path: str, included_files: set = None) -> str:
             match = include_pattern.match(line.strip())
             if match:
                 include_path = match.group(1)
-                abs_include_path = os.path.normpath(os.path.join(base_dir, include_path))
-                final_source.append(_resolve_metal_includes(abs_include_path, included_files))
+                abs_include_path = os.path.normpath(
+                    os.path.join(base_dir, include_path))
+                final_source.append(_resolve_metal_includes(
+                    abs_include_path, included_files))
             else:
                 final_source.append(line)
 
@@ -54,8 +56,8 @@ class MetalRunner:
             raise RuntimeError("Metal is not supported on this device.")
         self.command_queue = self.device.newCommandQueue()
         self.libraries: Dict[str, Metal.MTLLibrary] = {}
-        # Buffer cache: (size, dtype) -> Metal buffer
-        self.buffer_cache: Dict[Tuple[int, str], Any] = {}
+        # Buffer cache: (array_id, size, dtype) -> Metal buffer
+        self.buffer_cache: Dict[Tuple[int, int, str], Any] = {}
 
     def compile_library(self, library_key: str, file_path: str):
         """
@@ -69,9 +71,11 @@ class MetalRunner:
             return
 
         source = _resolve_metal_includes(file_path)
-        library, error = self.device.newLibraryWithSource_options_error_(source, None, None)
+        library, error = self.device.newLibraryWithSource_options_error_(
+            source, None, None)
         if error:
-            raise Exception(f"Metal library compilation failed for {file_path}: {error}")
+            raise Exception(
+                f"Metal library compilation failed for {file_path}: {error}")
         self.libraries[library_key] = library
 
     def clear_buffer_cache(self):
@@ -84,11 +88,12 @@ class MetalRunner:
     def get_buffer_cache_info(self) -> Dict:
         """
         Returns information about the current buffer cache.
-        
+
         Returns:
             Dict with cache statistics.
         """
-        total_size = sum(buffer.length() for buffer in self.buffer_cache.values())
+        total_size = sum(buffer.length()
+                         for buffer in self.buffer_cache.values())
         return {
             'num_cached_buffers': len(self.buffer_cache),
             'total_cached_bytes': total_size,
@@ -98,15 +103,16 @@ class MetalRunner:
     def _get_or_create_buffer(self, np_array: np.ndarray) -> Any:
         """
         Gets a cached Metal buffer or creates a new one if needed.
-        
+
         Args:
             np_array: The numpy array to create/find a buffer for.
-            
+
         Returns:
             A Metal buffer suitable for the array.
         """
-        buffer_key = (np_array.nbytes, str(np_array.dtype))
-        
+        # Use array id and size as key to ensure each unique array gets its own buffer
+        buffer_key = (id(np_array), np_array.nbytes, str(np_array.dtype))
+
         if buffer_key in self.buffer_cache:
             buffer = self.buffer_cache[buffer_key]
             # Copy data into the existing buffer
@@ -143,9 +149,10 @@ class MetalRunner:
         """
         library = self.libraries[library_key]
         kernel = library.newFunctionWithName_(kernel_name)
-        pipeline = self.device.newComputePipelineStateWithFunction_error_(kernel, None)[0]
+        pipeline = self.device.newComputePipelineStateWithFunction_error_(kernel, None)[
+            0]
 
-        # Get or create Metal buffers from numpy arrays (with caching)
+        # Get or create Metal buffers from numpy arrays (with fixed caching)
         metal_buffers = []
         for np_array in buffers_np:
             buffer = self._get_or_create_buffer(np_array)
@@ -161,8 +168,10 @@ class MetalRunner:
 
         # Dispatch threads
         grid_size = Metal.MTLSize(num_threads, 1, 1)
-        threadgroup_size = Metal.MTLSize(min(num_threads, pipeline.maxTotalThreadsPerThreadgroup()), 1, 1)
-        encoder.dispatchThreads_threadsPerThreadgroup_(grid_size, threadgroup_size)
+        threadgroup_size = Metal.MTLSize(
+            min(num_threads, pipeline.maxTotalThreadsPerThreadgroup()), 1, 1)
+        encoder.dispatchThreads_threadsPerThreadgroup_(
+            grid_size, threadgroup_size)
 
         encoder.endEncoding()
         command_buffer.commit()
@@ -170,6 +179,8 @@ class MetalRunner:
 
         # Copy data back from Metal buffers to the numpy arrays
         for i, np_array in enumerate(buffers_np):
-            result_bytes = metal_buffers[i].contents().as_buffer(np_array.nbytes)
-            updated_array = np.frombuffer(result_bytes, dtype=np_array.dtype).reshape(np_array.shape)
+            result_bytes = metal_buffers[i].contents(
+            ).as_buffer(np_array.nbytes)
+            updated_array = np.frombuffer(
+                result_bytes, dtype=np_array.dtype).reshape(np_array.shape)
             np.copyto(np_array, updated_array)
