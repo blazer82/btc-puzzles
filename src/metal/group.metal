@@ -95,18 +95,9 @@ static inline void ge_set_gej(thread ge &r, const thread gej &a) {
     }
     r.infinity = 0;
 
-    // Check if z is zero (which would indicate infinity)
-    fe zero;
-    fe_set_int(zero, 0);
-    bool z_is_zero = true;
-    for (int i = 0; i < 5; i++) {
-        if (a.z.n[i] != 0) {
-            z_is_zero = false;
-            break;
-        }
-    }
-    
-    if (z_is_zero) {
+    // Check if z normalizes to zero (which indicates the point is at infinity).
+    // A simple limb-wise check is incorrect for unnormalized field elements.
+    if (fe_normalizes_to_zero(a.z)) {
         r.infinity = 1;
         fe_set_int(r.x, 0);
         fe_set_int(r.y, 0);
@@ -176,18 +167,6 @@ static inline void gej_add_ge(thread gej &r, const thread gej &a, const thread g
     // We replicate that here to keep the logic identical.
     fe_add(m_alt, u1); // m_alt is now u1 - u2
 
-    // First check if m_alt (u1-u2) is zero, which means x-coordinates match
-    bool x_equal = fe_normalizes_to_zero(m_alt);
-    
-    // If x-coordinates match, check if y-coordinates are opposites
-    bool y_opposite = false;
-    if (x_equal) {
-        // If y-coordinates are opposites, s1 + s2 will be 0.
-        fe y_sum = s1;
-        fe_add(y_sum, s2);
-        y_opposite = fe_normalizes_to_zero(y_sum);
-    }
-
     fe_cmov(rr_alt, rr, !degenerate);
     fe_cmov(m_alt, m, !degenerate);
 
@@ -210,6 +189,6 @@ static inline void gej_add_ge(thread gej &r, const thread gej &a, const thread g
     fe_negate(r.y, t, 18);
     fe_half(r.y);
 
-    // Set infinity flag if points are inverses (same x, opposite y) or if z normalizes to zero
-    r.infinity = ((x_equal && y_opposite) || fe_normalizes_to_zero(r.z)) ? 1 : 0;
+    // Set r->infinity if r->z is 0. This handles the case where a = -b.
+    r.infinity = fe_normalizes_to_zero(r.z);
 }

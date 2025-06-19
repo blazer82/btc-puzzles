@@ -3,6 +3,8 @@ import numpy as np
 
 import cryptography_utils as crypto
 from kangaroo_runner_gpu import KangarooRunnerGPU
+from kangaroo_runner_cpu import KangarooRunnerCPU
+import metal_utils as mu
 
 
 @pytest.fixture
@@ -29,6 +31,13 @@ def puzzle_5_def():
     import config_manager as cm
     # Assumes puzzles.json is in the root, and tests are run from root.
     return cm.load_puzzle_definition(5, 'puzzles.json')
+
+
+@pytest.fixture
+def puzzle_35_def():
+    """Loads puzzle #35 definition."""
+    import config_manager as cm
+    return cm.load_puzzle_definition(35, 'puzzles.json')
 
 
 @pytest.fixture
@@ -131,3 +140,78 @@ class TestKangarooRunner:
         # The private key for puzzle #5 is 21.
         expected_solution = 21
         assert solution == expected_solution
+
+
+    def test_gpu_vs_cpu_multi_hop_by_hop(self, puzzle_35_def):
+        """
+        Compares the state of multiple kangaroos in parallel between GPU and CPU.
+        This tests for any cross-thread interference during a kernel run.
+        """
+        num_walkers_to_test = 2
+        profile = {
+            "num_walkers": str(num_walkers_to_test),
+            "distinguished_point_threshold": "0",
+            "start_point_strategy": "midpoint",
+        }
+
+        try:
+            gpu_runner = KangarooRunnerGPU(puzzle_35_def, profile)
+        except (RuntimeError, Exception) as e:
+            pytest.skip(f"Skipping GPU test: {e}")
+
+        cpu_runner = KangarooRunnerCPU(puzzle_35_def, profile)
+        cpu_tame_kangaroos = cpu_runner.tame_kangaroos
+        cpu_wild_kangaroos = cpu_runner.wild_kangaroos
+
+        num_hops_to_test = 1000
+        for i in range(num_hops_to_test):
+            # 1. Advance CPU kangaroos (both herds)
+            for k in cpu_tame_kangaroos:
+                k.hop(cpu_runner.precomputed_hops)
+            for k in cpu_wild_kangaroos:
+                k.hop(cpu_runner.precomputed_hops)
+
+            # 2. Advance GPU kangaroos (both herds) in single kernel calls
+            gpu_runner.metal_runner.run_kernel(
+                "kangaroo_kernels", "batch_hop_kangaroos", num_walkers_to_test,
+                [gpu_runner.tame_kangaroos_np, gpu_runner.tame_distances_np,
+                 gpu_runner.precomputed_hops_np, gpu_runner.num_hops_np]
+            )
+            gpu_runner.metal_runner.run_kernel(
+                "kangaroo_kernels", "batch_hop_kangaroos", num_walkers_to_test,
+                [gpu_runner.wild_kangaroos_np, gpu_runner.wild_distances_np,
+                 gpu_runner.precomputed_hops_np, gpu_runner.num_hops_np]
+            )
+
+            # 3. Compare states for both herds
+            tame_affine_np = np.zeros(
+                (num_walkers_to_test, 11), dtype=np.uint64)
+            wild_affine_np = np.zeros(
+                (num_walkers_to_test, 11), dtype=np.uint64)
+            gpu_runner.metal_runner.run_kernel(
+                "kangaroo_kernels", "batch_ge_set_gej", num_walkers_to_test,
+                [gpu_runner.tame_kangaroos_np, tame_affine_np]
+            )
+            gpu_runner.metal_runner.run_kernel(
+                "kangaroo_kernels", "batch_ge_set_gej", num_walkers_to_test,
+                [gpu_runner.wild_kangaroos_np, wild_affine_np]
+            )
+
+            for k_idx in range(num_walkers_to_test):
+                # Compare tame kangaroos
+                cpu_point, cpu_dist = cpu_tame_kangaroos[k_idx].get_state()
+                gpu_dist = gpu_runner.tame_distances_np[k_idx]
+                gpu_point_xy = mu.ge_struct_to_point(tame_affine_np[k_idx])
+
+                assert cpu_dist == gpu_dist, f"Tame distance mismatch on hop {i+1} for k {k_idx}"
+                assert cpu_point.point(
+                ) == gpu_point_xy, f"Tame point mismatch on hop {i+1} for k {k_idx}"
+
+                # Compare wild kangaroos
+                cpu_point, cpu_dist = cpu_wild_kangaroos[k_idx].get_state()
+                gpu_dist = gpu_runner.wild_distances_np[k_idx]
+                gpu_point_xy = mu.ge_struct_to_point(wild_affine_np[k_idx])
+
+                assert cpu_dist == gpu_dist, f"Wild distance mismatch on hop {i+1} for k {k_idx}"
+                assert cpu_point.point(
+                ) == gpu_point_xy, f"Wild point mismatch on hop {i+1} for k {k_idx}"

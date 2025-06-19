@@ -154,39 +154,42 @@ class KangarooRunnerGPU:
         self.total_hops_performed += 2 * num_walkers
 
         # 2. Convert GPU results to affine to check for distinguished points
-        tame_affine_np = np.zeros((num_walkers, 11), dtype=np.uint64)
-        wild_affine_np = np.zeros((num_walkers, 11), dtype=np.uint64)
+        # Reuse the same affine arrays to avoid repeated allocations
+        if not hasattr(self, '_tame_affine_np'):
+            self._tame_affine_np = np.zeros((num_walkers, 11), dtype=np.uint64)
+            self._wild_affine_np = np.zeros((num_walkers, 11), dtype=np.uint64)
+        
         self.metal_runner.run_kernel(
             "kangaroo_kernels", "batch_ge_set_gej", num_walkers,
-            [self.tame_kangaroos_np, tame_affine_np]
+            [self.tame_kangaroos_np, self._tame_affine_np]
         )
         self.metal_runner.run_kernel(
             "kangaroo_kernels", "batch_ge_set_gej", num_walkers,
-            [self.wild_kangaroos_np, wild_affine_np]
+            [self.wild_kangaroos_np, self._wild_affine_np]
         )
 
         # 3. Collect new distinguished points
         new_distinguished_tame = []
         for i in range(num_walkers):
             # Skip infinity points
-            if tame_affine_np[i][10] == 1:  # infinity flag
+            if self._tame_affine_np[i][10] == 1:  # infinity flag
                 continue
                 
-            x_coord = mu.ge_struct_to_x_coord(tame_affine_np[i])
+            x_coord = mu.ge_struct_to_x_coord(self._tame_affine_np[i])
             if dp.is_distinguished(x_coord, self.dp_threshold):
-                point_xy = mu.ge_struct_to_point(tame_affine_np[i])
+                point_xy = mu.ge_struct_to_point(self._tame_affine_np[i])
                 dist = int(self.tame_distances_np[i])
                 new_distinguished_tame.append((point_xy, dist))
 
         new_distinguished_wild = []
         for i in range(num_walkers):
             # Skip infinity points
-            if wild_affine_np[i][10] == 1:  # infinity flag
+            if self._wild_affine_np[i][10] == 1:  # infinity flag
                 continue
                 
-            x_coord = mu.ge_struct_to_x_coord(wild_affine_np[i])
+            x_coord = mu.ge_struct_to_x_coord(self._wild_affine_np[i])
             if dp.is_distinguished(x_coord, self.dp_threshold):
-                point_xy = mu.ge_struct_to_point(wild_affine_np[i])
+                point_xy = mu.ge_struct_to_point(self._wild_affine_np[i])
                 dist = int(self.wild_distances_np[i])
                 new_distinguished_wild.append((point_xy, dist))
 
@@ -234,3 +237,37 @@ class KangarooRunnerGPU:
             tuple: (tame_trap_size, wild_trap_size)
         """
         return (self.tame_trap.size(), self.wild_trap.size())
+
+    def get_memory_info(self) -> Dict:
+        """
+        Returns information about GPU memory usage.
+        
+        Returns:
+            Dict with memory statistics.
+        """
+        buffer_info = self.metal_runner.get_buffer_cache_info()
+        
+        # Calculate size of our main arrays
+        tame_size = self.tame_kangaroos_np.nbytes + self.tame_distances_np.nbytes
+        wild_size = self.wild_kangaroos_np.nbytes + self.wild_distances_np.nbytes
+        hops_size = self.precomputed_hops_np.nbytes + self.num_hops_np.nbytes
+        
+        affine_size = 0
+        if hasattr(self, '_tame_affine_np'):
+            affine_size = self._tame_affine_np.nbytes + self._wild_affine_np.nbytes
+        
+        total_array_size = tame_size + wild_size + hops_size + affine_size
+        
+        return {
+            'buffer_cache': buffer_info,
+            'main_arrays_bytes': total_array_size,
+            'main_arrays_mb': total_array_size / (1024 * 1024),
+            'trap_sizes': self.get_trap_sizes()
+        }
+
+    def clear_gpu_cache(self):
+        """
+        Clears the GPU buffer cache to free memory.
+        Call this if memory usage becomes problematic.
+        """
+        self.metal_runner.clear_buffer_cache()

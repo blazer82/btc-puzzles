@@ -346,47 +346,20 @@ static inline bool fe_normalizes_to_zero(const thread fe &r) {
     ulong t0 = r.n[0], t1 = r.n[1], t2 = r.n[2], t3 = r.n[3], t4 = r.n[4];
     const ulong M52 = 0xFFFFFFFFFFFFFUL;
 
-    // First, we need to normalize the high bits
+    // z0 tracks a possible raw value of 0, z1 tracks a possible raw value of P
+    ulong z0, z1;
+
     ulong x = t4 >> 48;
     t4 &= 0x0FFFFFFFFFFFFUL;
 
-    // Apply the first reduction step
     t0 += x * 0x1000003D1UL;
+    t1 += (t0 >> 52); t0 &= M52; z0  = t0; z1  = t0 ^ 0x1000003D0UL;
+    t2 += (t1 >> 52); t1 &= M52; z0 |= t1; z1 &= t1;
+    t3 += (t2 >> 52); t2 &= M52; z0 |= t2; z1 &= t2;
+    t4 += (t3 >> 52); t3 &= M52; z0 |= t3; z1 &= t3;
+                                     z0 |= t4; z1 &= t4 ^ 0xF000000000000UL;
 
-    // Propagate carries
-    t1 += (t0 >> 52); t0 &= M52;
-    t2 += (t1 >> 52); t1 &= M52;
-    t3 += (t2 >> 52); t2 &= M52;
-    t4 += (t3 >> 52); t3 &= M52;
-
-    // Check if we need another reduction step
-    bool needs_extra_reduction = (t4 >> 48) || 
-                                ((t4 == 0x0FFFFFFFFFFFFUL) && 
-                                 (t3 == M52) && 
-                                 (t2 == M52) && 
-                                 (t1 == M52) && 
-                                 (t0 >= 0xFFFFEFFFFFC2FUL));
-
-    // Apply second reduction if needed
-    if (needs_extra_reduction) {
-        t0 += 0x1000003D1UL;
-        t1 += (t0 >> 52); t0 &= M52;
-        t2 += (t1 >> 52); t1 &= M52;
-        t3 += (t2 >> 52); t2 &= M52;
-        t4 += (t3 >> 52); t3 &= M52;
-        t4 &= 0x0FFFFFFFFFFFFUL;
-    }
-
-    // Check if this is the modulus or zero
-    // The modulus is: { 0xFFFFEFFFFFC2F, 0xFFFFFFFFFFFFF, 0xFFFFFFFFFFFFF, 0xFFFFFFFFFFFFF, 0x0FFFFFFFFFFFF }
-    bool is_modulus = (t0 == 0xFFFFEFFFFFC2FUL) && 
-                      (t1 == M52) && 
-                      (t2 == M52) && 
-                      (t3 == M52) && 
-                      (t4 == 0x0FFFFFFFFFFFFUL);
-                      
-    // Return true if all limbs are zero or if this is the modulus
-    return ((t0 | t1 | t2 | t3 | t4) == 0) || is_modulus;
+    return (z0 == 0) | (z1 == M52);
 }
 
 /* Create a copy of a field element and subtract another from it. */

@@ -10,6 +10,13 @@
 
 using namespace metal;
 
+// Reconstructs the lower 64 bits of a field element from its first two 52-bit limbs.
+// This is sufficient for the modulo operation since num_hops is small and correctly
+// mirrors the CPU's behavior of using the full integer coordinate.
+static inline ulong fe_to_uint64(const thread fe &a) {
+    return a.n[0] | (a.n[1] << 52);
+}
+
 /*
  * Executes one hop for a batch of kangaroos in parallel.
  *
@@ -23,8 +30,8 @@ using namespace metal;
 kernel void batch_hop_kangaroos(
     device gej* kangaroos [[buffer(0)]],
     device ulong* distances [[buffer(1)]],
-    device const ge* precomputed_hops [[buffer(2)]],
-    device const uint* num_precomputed_hops [[buffer(3)]],
+    constant const ge* precomputed_hops [[buffer(2)]],
+    constant const uint* num_precomputed_hops [[buffer(3)]],
     uint gid [[thread_position_in_grid]])
 {
     // Get current state for this thread's kangaroo
@@ -35,16 +42,21 @@ kernel void batch_hop_kangaroos(
     ge p_aff;
     ge_set_gej(p_aff, p);
 
-    // Select hop based on the first limb of the AFFINE X coordinate.
-    // This matches the logic of the working CPU implementation.
-    uint hop_index = p_aff.x.n[0] % num_precomputed_hops[0];
+    // Select hop based on the x-coordinate, using the lower 64 bits to match
+    // the CPU's behavior.
+    ulong x_coord_64 = fe_to_uint64(p_aff.x);
+    uint hop_index = x_coord_64 % num_precomputed_hops[0];
 
     // Get hop data
     ge hop_point = precomputed_hops[hop_index];
     ulong hop_distance = 1UL << hop_index;
 
     // Update state by adding the affine hop point to our Jacobian point
-    gej_add_ge(p, p, hop_point);
+    // Use a temporary variable `next_p` to avoid aliasing issues where the
+    // input and output of `gej_add_ge` are the same variable.
+    gej next_p;
+    gej_add_ge(next_p, p, hop_point);
+    p = next_p;
     d += hop_distance;
 
     // Write back results

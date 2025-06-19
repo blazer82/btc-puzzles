@@ -7,7 +7,7 @@ API, such as device initialization, library compilation from source files
 """
 import os
 import re
-from typing import Dict, List
+from typing import Dict, List, Tuple, Any
 
 import Metal
 import numpy as np
@@ -54,6 +54,8 @@ class MetalRunner:
             raise RuntimeError("Metal is not supported on this device.")
         self.command_queue = self.device.newCommandQueue()
         self.libraries: Dict[str, Metal.MTLLibrary] = {}
+        # Buffer cache: (size, dtype) -> Metal buffer
+        self.buffer_cache: Dict[Tuple[int, str], Any] = {}
 
     def compile_library(self, library_key: str, file_path: str):
         """
@@ -71,6 +73,53 @@ class MetalRunner:
         if error:
             raise Exception(f"Metal library compilation failed for {file_path}: {error}")
         self.libraries[library_key] = library
+
+    def clear_buffer_cache(self):
+        """
+        Clears the buffer cache to free up memory.
+        Call this periodically if memory usage becomes an issue.
+        """
+        self.buffer_cache.clear()
+
+    def get_buffer_cache_info(self) -> Dict:
+        """
+        Returns information about the current buffer cache.
+        
+        Returns:
+            Dict with cache statistics.
+        """
+        total_size = sum(buffer.length() for buffer in self.buffer_cache.values())
+        return {
+            'num_cached_buffers': len(self.buffer_cache),
+            'total_cached_bytes': total_size,
+            'total_cached_mb': total_size / (1024 * 1024)
+        }
+
+    def _get_or_create_buffer(self, np_array: np.ndarray) -> Any:
+        """
+        Gets a cached Metal buffer or creates a new one if needed.
+        
+        Args:
+            np_array: The numpy array to create/find a buffer for.
+            
+        Returns:
+            A Metal buffer suitable for the array.
+        """
+        buffer_key = (np_array.nbytes, str(np_array.dtype))
+        
+        if buffer_key in self.buffer_cache:
+            buffer = self.buffer_cache[buffer_key]
+            # Copy data into the existing buffer
+            buffer_ptr = buffer.contents()
+            buffer_ptr.as_buffer(np_array.nbytes)[:] = np_array.tobytes()
+            return buffer
+        else:
+            # Create new buffer and cache it
+            buffer = self.device.newBufferWithBytes_length_options_(
+                np_array.tobytes(), np_array.nbytes, Metal.MTLResourceStorageModeShared
+            )
+            self.buffer_cache[buffer_key] = buffer
+            return buffer
 
     def run_kernel(
         self,
@@ -96,13 +145,10 @@ class MetalRunner:
         kernel = library.newFunctionWithName_(kernel_name)
         pipeline = self.device.newComputePipelineStateWithFunction_error_(kernel, None)[0]
 
-        # Create Metal buffers from numpy arrays
+        # Get or create Metal buffers from numpy arrays (with caching)
         metal_buffers = []
         for np_array in buffers_np:
-            # MTLResourceStorageModeShared allows CPU and GPU to share memory
-            buffer = self.device.newBufferWithBytes_length_options_(
-                np_array.tobytes(), np_array.nbytes, Metal.MTLResourceStorageModeShared
-            )
+            buffer = self._get_or_create_buffer(np_array)
             metal_buffers.append(buffer)
 
         # Execute kernel
