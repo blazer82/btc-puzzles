@@ -2,6 +2,7 @@
 Defines the deterministic logic for how kangaroos select their next hop based
 on their current position.
 """
+import hashlib
 from typing import List
 
 from coincurve.keys import PublicKey
@@ -30,9 +31,9 @@ def select_hop_index(point_x_coordinate: int, num_precomputed_hops: int, kangaro
     """
     Determines the index of the next hop from the pre-computed list.
 
-    The selection is deterministic, based on the x-coordinate of the current
-    point and the kangaroo's unique ID, modulo the number of available hops.
-    This ensures different kangaroos take different paths.
+    Uses SHA-256 hash to combine the x-coordinate with the kangaroo ID,
+    ensuring strong path differentiation between kangaroos even when
+    starting from identical points.
 
     Args:
         point_x_coordinate (int): The x-coordinate of the kangaroo's current point.
@@ -42,4 +43,9 @@ def select_hop_index(point_x_coordinate: int, num_precomputed_hops: int, kangaro
     Returns:
         int: The index of the hop to use from the pre-computed list.
     """
-    return (point_x_coordinate + kangaroo_id) % num_precomputed_hops
+    # Create a strong hash combining coordinate and ID
+    hash_input = f"{point_x_coordinate}_{kangaroo_id}".encode('utf-8')
+    hash_result = hashlib.sha256(hash_input).digest()
+    # Use first 4 bytes as a 32-bit unsigned integer
+    hash_int = int.from_bytes(hash_result[:4], 'big')
+    return hash_int % num_precomputed_hops

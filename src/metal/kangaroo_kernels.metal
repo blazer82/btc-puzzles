@@ -35,11 +35,16 @@ kernel void batch_hop_kangaroos(
     ge p_aff;
     ge_set_gej(p_aff, current_p);
 
-    // Select hop based on the x-coordinate and the kangaroo's unique ID (gid).
-    // Using the lowest 52-bit limb (n[0]) is sufficient and correctly mirrors
-    // the CPU's behavior of using the full integer coordinate for the modulo
-    // operation, as num_hops is small.
-    uint hop_index = (p_aff.x.n[0] + gid) % num_precomputed_hops[0];
+    // Select hop using hash-based selection to ensure strong path differentiation.
+    // We'll use a simple hash function that combines the x-coordinate with the kangaroo ID.
+    // This mirrors the CPU's SHA-256 approach but uses a simpler hash suitable for GPU.
+    ulong x_coord = p_aff.x.n[0];  // Use lowest limb as representative coordinate
+    ulong combined = x_coord ^ (ulong(gid) << 32);  // XOR with shifted ID for mixing
+    // Apply additional mixing to improve distribution
+    combined ^= combined >> 16;
+    combined *= 0x85ebca6b;  // Multiply by a large prime for better distribution
+    combined ^= combined >> 13;
+    uint hop_index = uint(combined) % num_precomputed_hops[0];
 
     // Get hop data
     ge hop_point = precomputed_hops[hop_index];

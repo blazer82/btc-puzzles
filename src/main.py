@@ -91,11 +91,16 @@ def main():
                 else:
                     time_remaining_str = "Approaching..."
 
-            # Get trap sizes if the runner supports it
+            # Get trap sizes and infinity count if the runner supports it
             trap_info = ""
             if hasattr(runner, 'get_trap_sizes'):
                 tame_size, wild_size = runner.get_trap_sizes()
                 trap_info = f" | DPs: {tame_size:,}/{wild_size:,}"
+                
+                # Add infinity count for GPU runner
+                if hasattr(runner, 'get_infinity_count'):
+                    infinity_count = runner.get_infinity_count()
+                    trap_info += f" | Infinity: {infinity_count:,}"
 
             total_runtime = current_time - start_time
             print(

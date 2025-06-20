@@ -60,18 +60,18 @@ class KangarooRunnerCPU:
             raise ValueError(f"Unknown start_point_strategy: {start_point_strategy}")
 
         start_point_tame = crypto.scalar_multiply(self.start_key_tame)
-        self.tame_kangaroos: List[Kangaroo] = [
-            Kangaroo(kangaroo_id=i, initial_point=start_point_tame, is_tame=True)
-            for i in range(num_walkers)
-        ]
+        self.tame_kangaroos: List[Kangaroo] = []
+        for i in range(num_walkers):
+            k = Kangaroo(kangaroo_id=i, initial_point=start_point_tame, is_tame=True)
+            self.tame_kangaroos.append(k)
 
         # Setup wild herd
         target_pubkey_bytes = bytes.fromhex(self.puzzle_def['public_key'])
         start_point_wild = crypto.point_from_bytes(target_pubkey_bytes)
-        self.wild_kangaroos: List[Kangaroo] = [
-            Kangaroo(kangaroo_id=i, initial_point=start_point_wild, is_tame=False)
-            for i in range(num_walkers)
-        ]
+        self.wild_kangaroos: List[Kangaroo] = []
+        for i in range(num_walkers):
+            k = Kangaroo(kangaroo_id=i, initial_point=start_point_wild, is_tame=False)
+            self.wild_kangaroos.append(k)
 
         self.total_hops_performed = 0
 

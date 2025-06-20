@@ -88,15 +88,18 @@ class KangarooRunnerGPU:
         else:
             self.solution = None
 
-        tame_start_struct = mu.point_to_gej_struct(start_point_tame)
-        self.tame_kangaroos_np = np.tile(tame_start_struct, (num_walkers, 1))
+        # Initialize tame kangaroos
+        tame_kangaroos_list = [mu.point_to_gej_struct(start_point_tame) for _ in range(num_walkers)]
+        self.tame_kangaroos_np = np.array(tame_kangaroos_list, dtype=np.uint64)
         self.tame_distances_np = np.zeros(num_walkers, dtype=np.uint64)
 
-        wild_start_struct = mu.point_to_gej_struct(start_point_wild)
-        self.wild_kangaroos_np = np.tile(wild_start_struct, (num_walkers, 1))
+        # Initialize wild kangaroos
+        wild_kangaroos_list = [mu.point_to_gej_struct(start_point_wild) for _ in range(num_walkers)]
+        self.wild_kangaroos_np = np.array(wild_kangaroos_list, dtype=np.uint64)
         self.wild_distances_np = np.zeros(num_walkers, dtype=np.uint64)
 
         self.total_hops_performed = 0
+        self.total_infinity_points = 0
 
     def step(self) -> Optional[int]:
         """
@@ -149,11 +152,15 @@ class KangarooRunnerGPU:
             [self.wild_kangaroos_np, self._wild_affine_np]
         )
 
-        # 3. Collect new distinguished points
+        # 3. Collect new distinguished points and count infinity points
+        infinity_count_tame = 0
+        infinity_count_wild = 0
+        
         new_distinguished_tame = []
         for i in range(num_walkers):
-            # Skip infinity points
+            # Count and skip infinity points
             if self._tame_affine_np[i][10] == 1:  # infinity flag
+                infinity_count_tame += 1
                 continue
                 
             x_coord = mu.ge_struct_to_x_coord(self._tame_affine_np[i])
@@ -164,8 +171,9 @@ class KangarooRunnerGPU:
 
         new_distinguished_wild = []
         for i in range(num_walkers):
-            # Skip infinity points
+            # Count and skip infinity points
             if self._wild_affine_np[i][10] == 1:  # infinity flag
+                infinity_count_wild += 1
                 continue
                 
             x_coord = mu.ge_struct_to_x_coord(self._wild_affine_np[i])
@@ -173,6 +181,9 @@ class KangarooRunnerGPU:
                 point_xy = mu.ge_struct_to_point(self._wild_affine_np[i])
                 dist = int(self.wild_distances_np[i])
                 new_distinguished_wild.append((point_xy, dist))
+        
+        # Update total infinity count
+        self.total_infinity_points += infinity_count_tame + infinity_count_wild
 
         # 4. Check for collisions and update traps
         curve_n = crypto.get_curve_order_n()
@@ -216,6 +227,15 @@ class KangarooRunnerGPU:
             tuple: (tame_trap_size, wild_trap_size)
         """
         return (self.tame_trap.size(), self.wild_trap.size())
+    
+    def get_infinity_count(self) -> int:
+        """
+        Returns the total number of infinity points encountered.
+        
+        Returns:
+            int: Total infinity points across all steps
+        """
+        return self.total_infinity_points
 
     def get_memory_info(self) -> Dict:
         """
@@ -241,7 +261,8 @@ class KangarooRunnerGPU:
             'buffer_cache': buffer_info,
             'main_arrays_bytes': total_array_size,
             'main_arrays_mb': total_array_size / (1024 * 1024),
-            'trap_sizes': self.get_trap_sizes()
+            'trap_sizes': self.get_trap_sizes(),
+            'infinity_points': self.get_infinity_count()
         }
 
     def clear_gpu_cache(self):
