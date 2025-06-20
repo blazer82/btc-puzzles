@@ -18,20 +18,16 @@ class Kangaroo:
     and the total distance it has traveled from its starting point.
     """
 
-    def __init__(self, initial_point: PublicKey, is_tame: bool, initial_warmup_hops: int = 0):
+    def __init__(self, kangaroo_id: int, initial_point: PublicKey, is_tame: bool):
         """
         Initializes the kangaroo.
 
-        Note: The actual warm-up hops specified by `initial_warmup_hops`
-        are expected to be performed by the calling code (e.g., KangarooRunner)
-        by repeatedly calling the `hop()` method.
-
         Args:
+            kangaroo_id (int): The unique identifier for this kangaroo.
             initial_point (PublicKey): The starting point on the curve.
             is_tame (bool): True if this is a tame kangaroo, False for wild.
-            initial_warmup_hops (int): A parameter indicating how many warm-up
-                                       hops are needed for this kangaroo.
         """
+        self.id = kangaroo_id
         self.current_point: PublicKey = initial_point
         self.is_tame: bool = is_tame
         self.distance: int = 0
@@ -47,10 +43,10 @@ class Kangaroo:
         Args:
             precomputed_hops (List[PublicKey]): A list of pre-computed hop points.
         """
-        # Select which hop to take based on the current position
+        # Select which hop to take based on the current position and kangaroo ID
         x_coord = crypto.get_x_coordinate_int(self.current_point)
         num_hops = len(precomputed_hops)
-        hop_index = hs.select_hop_index(x_coord, num_hops)
+        hop_index = hs.select_hop_index(x_coord, num_hops, self.id)
 
         # Get the hop point and its corresponding distance (2^i)
         hop_point = precomputed_hops[hop_index]

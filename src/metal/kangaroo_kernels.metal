@@ -35,10 +35,11 @@ kernel void batch_hop_kangaroos(
     ge p_aff;
     ge_set_gej(p_aff, current_p);
 
-    // Select hop based on the x-coordinate. Using the lowest 52-bit limb (n[0])
-    // is sufficient and correctly mirrors the CPU's behavior of using the full
-    // integer coordinate for the modulo operation, as num_hops is small.
-    uint hop_index = p_aff.x.n[0] % num_precomputed_hops[0];
+    // Select hop based on the x-coordinate and the kangaroo's unique ID (gid).
+    // Using the lowest 52-bit limb (n[0]) is sufficient and correctly mirrors
+    // the CPU's behavior of using the full integer coordinate for the modulo
+    // operation, as num_hops is small.
+    uint hop_index = (p_aff.x.n[0] + gid) % num_precomputed_hops[0];
 
     // Get hop data
     ge hop_point = precomputed_hops[hop_index];

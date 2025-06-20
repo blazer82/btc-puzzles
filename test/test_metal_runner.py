@@ -57,8 +57,11 @@ class TestMetalRunner:
         num_hops_np = np.array([num_hops], dtype=np.uint32)
 
         # 3. Calculate expected result on CPU using the full x-coordinate
+        # The kernel uses gid (thread_position_in_grid) as the kangaroo_id.
+        # Since we run with 1 thread, gid is 0.
+        kangaroo_id = 0
         full_x_coord = crypto.get_x_coordinate_int(g)
-        expected_hop_index = hs.select_hop_index(full_x_coord, num_hops)
+        expected_hop_index = hs.select_hop_index(full_x_coord, num_hops, kangaroo_id)
         expected_hop_distance = 2**expected_hop_index
         expected_next_point = crypto.point_add(
             g, precomputed_hops_list[expected_hop_index])

@@ -48,21 +48,22 @@ class TestKangarooRunner:
         expected_start_key = (2 + 3) // 2
         assert runner.start_key_tame == expected_start_key
 
-        # Check that warm-up hops differentiate kangaroos
-        # With 2 walkers, walker 0 does 0 warm-up hops, walker 1 does 1.
+        # Check that kangaroos are initialized with unique IDs and zero distance
+        assert runner.tame_kangaroos[0].id == 0
+        assert runner.tame_kangaroos[1].id == 1
         assert runner.tame_kangaroos[0].distance == 0
+        assert runner.tame_kangaroos[1].distance == 0
         assert runner.wild_kangaroos[0].distance == 0
-        assert runner.tame_kangaroos[1].distance > 0
-        assert runner.wild_kangaroos[1].distance > 0
+        assert runner.wild_kangaroos[1].distance == 0
 
-        # Check total hops after warm-up (i=0 does 0, i=1 does 1 hop * 2 herds)
-        expected_hops = 2 * sum(range(num_walkers))
-        assert runner.get_total_hops_performed() == expected_hops
+        # Check total hops is zero after initialization (no warm-up)
+        assert runner.get_total_hops_performed() == 0
 
     def test_step_updates_total_hops(self, puzzle_def, profile_config):
         """Tests that a single step correctly updates the total hop count."""
         runner = KangarooRunnerCPU(puzzle_def, profile_config)
         initial_hops = runner.get_total_hops_performed()
+        assert initial_hops == 0  # No warm-up hops
         num_walkers = int(profile_config['num_walkers'])
 
         runner.step()

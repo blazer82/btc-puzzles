@@ -30,18 +30,24 @@ def test_generate_precomputed_hops():
 def test_select_hop_index():
     """Tests the deterministic selection of a hop index."""
     num_hops = 16
+    k_id = 0  # Default kangaroo ID for these tests
 
     # Test with x-coordinate less than num_hops
-    assert hs.select_hop_index(0, num_hops) == 0
-    assert hs.select_hop_index(15, num_hops) == 15
+    assert hs.select_hop_index(0, num_hops, k_id) == 0
+    assert hs.select_hop_index(15, num_hops, k_id) == 15
 
     # Test with x-coordinate equal to num_hops
-    assert hs.select_hop_index(16, num_hops) == 0
+    assert hs.select_hop_index(16, num_hops, k_id) == 0
 
-    # Test with a larger x-coordinate (100 % 16 = 4)
-    assert hs.select_hop_index(100, num_hops) == 4
+    # Test with a larger x-coordinate ((100 + 0) % 16 = 4)
+    assert hs.select_hop_index(100, num_hops, k_id) == 4
 
     # Test with a very large x-coordinate
     large_x = 0xABCDEF1234567890
-    expected_index = large_x % num_hops
-    assert hs.select_hop_index(large_x, num_hops) == expected_index
+    expected_index = (large_x + k_id) % num_hops
+    assert hs.select_hop_index(large_x, num_hops, k_id) == expected_index
+
+    # Test that different kangaroo IDs produce different results
+    k_id_2 = 1
+    assert hs.select_hop_index(100, num_hops, k_id) != hs.select_hop_index(100, num_hops, k_id_2)
+    assert hs.select_hop_index(100, num_hops, k_id_2) == (100 + k_id_2) % num_hops

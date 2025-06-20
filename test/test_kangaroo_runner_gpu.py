@@ -76,22 +76,20 @@ class TestKangarooRunner:
         expected_start_key = (2 + 4) // 2
         assert runner.start_key_tame == expected_start_key
 
-        # Check that warm-up hops differentiate kangaroos
-        # With 2 walkers, walker 0 does 0 warm-up hops, walker 1 does 1.
+        # Check that kangaroos start with zero distance
         assert runner.tame_distances_np[0] == 0
         assert runner.wild_distances_np[0] == 0
-        assert runner.tame_distances_np[1] > 0
-        assert runner.wild_distances_np[1] > 0
+        assert runner.tame_distances_np[1] == 0
+        assert runner.wild_distances_np[1] == 0
 
-        # Check that the points for walker 1 are different from walker 0
-        assert not np.array_equal(
+        # Check that all starting points are identical before the first hop
+        assert np.array_equal(
             runner.tame_kangaroos_np[0], runner.tame_kangaroos_np[1])
-        assert not np.array_equal(
+        assert np.array_equal(
             runner.wild_kangaroos_np[0], runner.wild_kangaroos_np[1])
 
-        # Check total hops after warm-up
-        expected_hops = 2 * sum(range(num_walkers))
-        assert runner.get_total_hops_performed() == expected_hops
+        # Check total hops is zero after initialization (no warm-up)
+        assert runner.get_total_hops_performed() == 0
 
     def test_solve_simple_puzzle_e2e(self, simple_puzzle, fast_profile):
         """

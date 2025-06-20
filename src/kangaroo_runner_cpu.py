@@ -26,8 +26,8 @@ class KangarooRunnerCPU:
 
         Sets up the initial state for all tame and wild kangaroos based on the
         puzzle definition and solver profile. This includes pre-computing hops,
-        initializing traps, and performing warm-up hops for each kangaroo to
-        ensure they follow unique paths.
+        initializing traps, and assigning unique IDs to ensure each kangaroo
+        follows a unique path.
 
         Args:
             puzzle_def (Dict): The parameters for the specific puzzle.
@@ -61,24 +61,19 @@ class KangarooRunnerCPU:
 
         start_point_tame = crypto.scalar_multiply(self.start_key_tame)
         self.tame_kangaroos: List[Kangaroo] = [
-            Kangaroo(initial_point=start_point_tame, is_tame=True) for _ in range(num_walkers)
+            Kangaroo(kangaroo_id=i, initial_point=start_point_tame, is_tame=True)
+            for i in range(num_walkers)
         ]
 
         # Setup wild herd
         target_pubkey_bytes = bytes.fromhex(self.puzzle_def['public_key'])
         start_point_wild = crypto.point_from_bytes(target_pubkey_bytes)
         self.wild_kangaroos: List[Kangaroo] = [
-            Kangaroo(initial_point=start_point_wild, is_tame=False) for _ in range(num_walkers)
+            Kangaroo(kangaroo_id=i, initial_point=start_point_wild, is_tame=False)
+            for i in range(num_walkers)
         ]
 
         self.total_hops_performed = 0
-
-        # Perform warm-up hops to differentiate paths
-        for i in range(num_walkers):
-            for _ in range(i):
-                self.tame_kangaroos[i].hop(self.precomputed_hops)
-                self.wild_kangaroos[i].hop(self.precomputed_hops)
-                self.total_hops_performed += 2  # One for tame, one for wild
 
     def step(self) -> Optional[int]:
         """
@@ -144,8 +139,6 @@ class KangarooRunnerCPU:
     def get_total_hops_performed(self) -> int:
         """
         Provides the cumulative number of hops performed by all kangaroos.
-
-        This includes the initial warm-up hops.
 
         Returns:
             int: The total number of hops.

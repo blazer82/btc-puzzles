@@ -29,8 +29,8 @@ class KangarooRunnerGPU:
         Initializes the KangarooRunnerGPU for GPU execution.
 
         Sets up the Metal runner, compiles kernels, and initializes the state
-        of all kangaroos in NumPy arrays suitable for the GPU. It also performs
-        GPU-based warm-up hops to ensure kangaroos follow unique paths.
+        of all kangaroos in NumPy arrays suitable for the GPU. Each kangaroo
+        follows a unique path based on its thread ID.
 
         Args:
             puzzle_def (Dict): The parameters for the specific puzzle.
@@ -97,25 +97,6 @@ class KangarooRunnerGPU:
         self.wild_distances_np = np.zeros(num_walkers, dtype=np.uint64)
 
         self.total_hops_performed = 0
-
-        # Perform warm-up hops to differentiate paths using the GPU
-        # This is done by hopping kangaroos [i..N] once, for i from 1 to N-1.
-        for i in range(1, num_walkers):
-            num_to_hop = num_walkers - i
-
-            # Hop relevant slice of tame kangaroos
-            self.metal_runner.run_kernel(
-                "kangaroo_kernels", "batch_hop_kangaroos", num_to_hop,
-                [self.tame_kangaroos_np[i:], self.tame_distances_np[i:],
-                 self.precomputed_hops_np, self.num_hops_np]
-            )
-            # Hop relevant slice of wild kangaroos
-            self.metal_runner.run_kernel(
-                "kangaroo_kernels", "batch_hop_kangaroos", num_to_hop,
-                [self.wild_kangaroos_np[i:], self.wild_distances_np[i:],
-                 self.precomputed_hops_np, self.num_hops_np]
-            )
-            self.total_hops_performed += 2 * num_to_hop
 
     def step(self) -> Optional[int]:
         """
@@ -221,8 +202,6 @@ class KangarooRunnerGPU:
     def get_total_hops_performed(self) -> int:
         """
         Provides the cumulative number of hops performed by all kangaroos.
-
-        This includes the initial warm-up hops.
 
         Returns:
             int: The total number of hops.

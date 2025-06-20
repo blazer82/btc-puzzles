@@ -26,18 +26,20 @@ def generate_precomputed_hops() -> List[PublicKey]:
     return hops
 
 
-def select_hop_index(point_x_coordinate: int, num_precomputed_hops: int) -> int:
+def select_hop_index(point_x_coordinate: int, num_precomputed_hops: int, kangaroo_id: int) -> int:
     """
     Determines the index of the next hop from the pre-computed list.
 
     The selection is deterministic, based on the x-coordinate of the current
-    point modulo the number of available hops.
+    point and the kangaroo's unique ID, modulo the number of available hops.
+    This ensures different kangaroos take different paths.
 
     Args:
         point_x_coordinate (int): The x-coordinate of the kangaroo's current point.
         num_precomputed_hops (int): The total number of pre-computed hops available.
+        kangaroo_id (int): The unique ID of the kangaroo.
 
     Returns:
         int: The index of the hop to use from the pre-computed list.
     """
-    return point_x_coordinate % num_precomputed_hops
+    return (point_x_coordinate + kangaroo_id) % num_precomputed_hops
